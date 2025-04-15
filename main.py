@@ -229,6 +229,7 @@ def main(config: TrainConfig):
 
         if envs.is_closed:
             envs.start()
+        n_agents = list(envs.n_agents)[0]
         shared_parameters_policy = True
         policy_net = torch.nn.Sequential(
             MultiAgentMLP(
@@ -236,7 +237,7 @@ def main(config: TrainConfig):
                 n_agent_inputs=ob_spec["agents", "observation"].shape[-1],
                 # 2 * n_actions_per_agents
                 n_agent_outputs=2 * ac_spec.shape[-1],  # 2 * n_actions_per_agents
-                n_agents=envs.n_agents[0],
+                n_agents=n_agents,
                 #  the policies are decentralised (ie each agent will act from its observation)
                 centralised=False,
                 share_params=shared_parameters_policy,
@@ -274,7 +275,7 @@ def main(config: TrainConfig):
         critic_net = MultiAgentMLP(
             n_agent_inputs=ob_spec["agents", "observation"].shape[-1],
             n_agent_outputs=1,  # 1 value per agent
-            n_agents=envs.n_agents[0],
+            n_agents=n_agents,
             centralised=mappo,
             share_params=share_parameters_critic,
             device=config.device,
