@@ -18,3 +18,5 @@ black
 matplotlib
 wandb
 black
+GPUtil
+tqdm
