@@ -275,7 +275,7 @@ def main(config: TrainConfig):
                 "high": envs.full_action_spec_unbatched[envs.action_key].space.high,
             },
             return_log_prob=False,
-        )  # we'll need the log-prob for the PPO loss
+        )
 
         exploration_policy = TensorDictSequential(
             policy,
