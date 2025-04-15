@@ -1,0 +1,419 @@
+from torchrl.data import (
+    Bounded,
+    Composite,
+    Unbounded,
+    UnboundedContinuous,
+    BoundedContinuous,
+    Categorical,
+)
+from torchrl.envs import EnvBase
+from tensordict import TensorDict, TensorDictBase
+from tensordict.nn import TensorDictModule
+import torch
+from rs.envs.engine import AutoRestartManager, SignalCoverage
+import copy
+import numpy as np
+from typing import Optional
+import time
+import queue
+import torch
+
+"""
+tensordict:
+{
+    "rf_positions",
+    "rx_positions",
+    "focal_points",
+    
+    "action": delta_focal_points,
+    
+    "reward": reward,
+    "done": done,
+    
+}
+"""
+
+
+class Classroom(EnvBase):
+    metadata = {
+        "render_modes": ["human", "rgb_array"],
+        "render_fps": 30,
+    }
+    batch_locked = False
+
+    def __init__(
+        self,
+        sionna_config,
+        seed=None,
+        device="cpu",
+        *,
+        num_runs_before_restart=10,
+    ):
+
+        super().__init__(device=device, batch_size=[1])
+
+        torch.multiprocessing.set_start_method("forkserver", force=True)
+        if seed is None:
+            seed = torch.empty((), dtype=torch.int64).random_().item()
+        self.set_seed(seed)
+
+        self.np_rng = np.random.default_rng(seed)
+        self.default_sionna_config = copy.deepcopy(sionna_config)
+        self.num_runs_before_restart = num_runs_before_restart
+
+        # devices
+        rx_positions = torch.tensor(
+            sionna_config["rx_positions"], dtype=torch.float32, device=device
+        )
+        rx_positions = rx_positions.unsqueeze(0)
+        rx_positions = torch.repeat_interleave(
+            rx_positions, len(sionna_config["rf_positions"]), dim=0
+        )
+        self.rx_position_shape = rx_positions.shape
+        self.num_rx = len(sionna_config["rx_positions"])
+
+        # Init focal points
+        num_rf = len(sionna_config["rf_positions"])
+        self.n_agents = num_rf
+        self.init_focals = torch.tensor(
+            [[0.0, 5.5, 2.0] for _ in range(num_rf)], dtype=torch.float32, device=device
+        )
+        self.focal_low = torch.tensor([[[-12.5, -12.5, -10], [-6.5, -12.5, -10.0]]], device=device)
+        self.focal_high = torch.tensor([[[6.5, 12.5, 10.0], [12.5, 12.5, 10.0]]], device=device)
+
+        # observations: focal points, rx_positions, rf_positions
+        # actions: delta_focal_points
+        # rewards: reward
+        # done: done
+
+        # flatten all the tensors for observation
+        rf_positions = torch.tensor(
+            sionna_config["rf_positions"], dtype=torch.float32, device=device
+        )
+        rx_positions = rx_positions.view(len(rf_positions), -1)
+        rf_positions = rf_positions.view(len(rf_positions), -1)
+        focals = self.init_focals.view(len(rf_positions), -1)
+
+        tmp_observation = torch.cat([rx_positions, rf_positions, focals], dim=1)
+        self.observation_shape = tmp_observation.shape
+        rx_low = torch.ones_like(rx_positions, device=device) * (-100)
+        rx_high = torch.ones_like(rx_positions, device=device) * 100
+        rf_low = torch.ones_like(rf_positions, device=device) * (-100)
+        rf_high = torch.ones_like(rf_positions, device=device) * 100
+        focals_low = self.focal_low[0]
+        focals_high = self.focal_high[0]
+
+        self.observation_low = torch.cat([rx_low, rf_low, focals_low], dim=1)
+        self.observation_high = torch.cat([rx_high, rf_high, focals_high], dim=1)
+
+        self.mgr = None
+        self._make_spec()
+
+        self.rx_pos_ranges = [
+            [[0.2, 3.5], [-1.0, 2.0]],
+            [[0.2, 3.5], [-5.5, -1.5]],
+            [[-3.5, -0.2], [-1.0, 2.0]],
+            [[-3.5, -0.2], [-5.5, -1.5]],
+        ]
+
+    def _is_eligible(self, pt, obstacle_pos, rx_pos):
+        """
+        Check if the position is eligible for new rx_pos.
+        This function checks if the new rx_pos is not too close to obstacles and not too close to existing rx_pos.
+        """
+        # append new rx_pos that are not too close to obstacles
+        is_obs_overlaped = False
+        for pos in obstacle_pos:
+            if np.linalg.norm(np.array(pos[:2]) - np.array(pt)) < 0.7:
+                is_obs_overlaped = True
+                break
+
+        # make sure that distance between rx_pos is at least 1
+        if not is_obs_overlaped:
+            if not any(np.linalg.norm(np.array(pos[:2]) - np.array(pt)) < 1.5 for pos in rx_pos):
+                return True
+        return False
+
+    def _prepare_rx_positions(self, num_rxs) -> list:
+        # Pick ranges from rx_pos_ranges
+        rx_pos = []
+        is_3d = 3 if self.rx_position_shape[-1] == 3 else 2
+        rx_pos_ranges = self.np_rng.choice(self.rx_pos_ranges, num_rxs, replace=False)
+        for rx_pos_range in rx_pos_ranges:
+            pt = None
+            while not pt:
+                x = self.np_rng.uniform(low=rx_pos_range[0][0], high=rx_pos_range[0][1])
+                y = self.np_rng.uniform(low=rx_pos_range[1][0], high=rx_pos_range[1][1])
+                tmp = [x, y]
+                if self._is_eligible(tmp, [], rx_pos):
+                    pt = tmp
+                    if is_3d == 3:
+                        rx_pos.append([x, y, 1.5])
+                    else:
+                        rx_pos.append([x, y])
+
+        return rx_pos
+
+    def _get_ob(self, tensordict: TensorDictBase) -> TensorDictBase:
+
+        rf_positions = tensordict["agents", "rf_positions"]
+        rx_positions = tensordict["agents", "rx_positions"]
+        focals = tensordict["agents", "focals"]
+        # flatten all the tensors for observation
+        rf_shape = rf_positions.shape
+        rx_positions = rx_positions.view(rf_shape[0], rf_shape[1], -1)
+        rf_positions = rf_positions.view(rf_shape[0], rf_shape[1], -1)
+        focals = focals.view(rf_shape[0], rf_shape[1], -1)
+
+        observation = torch.cat([rx_positions, rf_positions, focals], dim=-1)
+        tensordict["agents", "observation"] = observation
+
+    def _reset(self, tensordict: TensorDict = None) -> TensorDict:
+
+        sionna_config = copy.deepcopy(self.default_sionna_config)
+        rf_positions = torch.tensor(
+            sionna_config["rf_positions"], dtype=torch.float32, device=self.device
+        )
+
+        # // TODO: Initialize/reposition receivers
+        rx_positions = sionna_config["rx_positions"]
+        rx_positions = self._prepare_rx_positions(len(rx_positions))
+        sionna_config["rx_positions"] = rx_positions
+
+        rx_positions = torch.tensor(rx_positions, dtype=torch.float32, device=self.device)
+        rx_positions = rx_positions.unsqueeze(0)
+        rx_positions = torch.repeat_interleave(rx_positions, len(rf_positions), dim=0)
+
+        # Initialize the environment using the Sionna configuration
+        self._init_manager(sionna_config)
+
+        # // TODO: Initialize focal points of reflectors
+        # delta_focals = self.np_rng.uniform(low=-0.001, high=0.001, size=(self.init_focals.shape))
+        delta_focals = self.np_rng.uniform(low=-1.5, high=1.5, size=(self.init_focals.shape))
+        delta_focals = np.expand_dims(delta_focals, axis=0)
+        delta_focals = torch.tensor(delta_focals, dtype=torch.float32, device=self.device)
+        focals = self.init_focals.unsqueeze(0) + delta_focals
+        focals = torch.clamp(focals, self.focal_low, self.focal_high)
+
+        self.cur_rss = self._get_rss(focals)
+        self.prev_rss = self.cur_rss.clone().detach()
+
+        out = {
+            "agents": {
+                "rf_positions": rf_positions.unsqueeze(0),
+                "rx_positions": rx_positions.unsqueeze(0),
+                "focals": focals.clone().detach(),
+                "prev_rss": self.prev_rss,
+                "cur_rss": self.cur_rss,
+            }
+        }
+        out = TensorDict(out, device=self.device, batch_size=1)
+        self._get_ob(out)
+
+        return out
+
+    def _step(self, tensordict: TensorDict) -> TensorDict:
+        """Perform a step in the environment."""
+
+        # tensordict  contains the current state of the environment and the action taken
+        # by the agent.
+        delta_focals = tensordict["agents", "action"]
+        focals = tensordict["agents", "focals"] + delta_focals
+        focals = torch.clamp(focals, self.focal_low, self.focal_high)
+
+        # Get rss from the simulation
+        # ` TODO: prev_rss and cur_rss may need to be normalized from the SimulationWorker
+        # // TODO: The rss now is not normalized
+        # ` TODO: Now it is normalized!!
+        self.prev_rss = self.cur_rss
+        self.cur_rss = self._get_rss(focals)
+        reward = self._calculate_reward(self.cur_rss, self.prev_rss)
+
+        done = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
+        terminated = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
+
+        out = {
+            "agents": {
+                "rf_positions": tensordict["agents", "rf_positions"],
+                "rx_positions": tensordict["agents", "rx_positions"],
+                "focals": focals.clone().detach(),
+                "prev_rss": self.prev_rss,
+                "cur_rss": self.cur_rss,
+                "reward": reward,
+            },
+            "done": done,
+            "terminated": terminated,
+        }
+        out = TensorDict(out, device=self.device, batch_size=1)
+        self._get_ob(out)
+
+        return out
+
+    def _get_rss(self, focals: torch.Tensor) -> torch.Tensor:
+
+        try:
+            self.mgr.run_simulation((focals.detach().cpu().numpy()[0],))
+            res = None
+            while res is None:
+                try:
+                    res = self.mgr.get_result(timeout=10)
+                except queue.Empty:
+                    time.sleep(0.1)
+                except KeyboardInterrupt:
+                    print("KeyboardInterrupt: shutting down")
+                    self.mgr.shutdown()
+                    raise
+                except Exception as e:
+                    print(f"Exception: {e}")
+                    self.mgr.shutdown()
+                    raise
+            rss = torch.tensor(res[1], dtype=torch.float32, device=self.device)
+            rss = rss.unsqueeze(0)
+        except Exception as e:
+            print(f"Exception: {e}")
+            self.mgr.shutdown()
+            raise e
+        return rss
+
+    def _calculate_reward(self, cur_rss, prev_rss):
+        """Calculate the reward based on the current and previous rss."""
+        # Reward is the difference between current and previous rss
+
+        w1 = 1
+        average_rss = torch.mean(cur_rss)
+        w2 = 0.6
+        average_diff = torch.mean(cur_rss - prev_rss)
+        # print(f"cur_rss: {cur_rss}")
+        # print(f"average_rss: {average_rss}")
+        # print(f"average_diff: {average_diff}")
+
+        reward = 0.1 / self.num_rx * (w1 * average_rss + w2 * average_diff)
+        reward = reward.unsqueeze(0).unsqueeze(0)
+        reward = reward.expand(self.reward_spec.shape)
+        # print(f"reward: {reward}")
+        return reward
+
+    def _make_spec(self):
+        # Under the hood, this will populate self.output_spec["observation"]
+
+        # print(f"focal_low: {focal_low.shape}")
+        # print((1, *self.init_focals.shape))
+        self.observation_spec = Composite(
+            agents=Composite(
+                observation=Bounded(
+                    low=self.observation_low.unsqueeze(0),
+                    high=self.observation_high.unsqueeze(0),
+                    shape=(1, *self.observation_shape),
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
+                rx_positions=Bounded(
+                    low=-100,
+                    high=100,
+                    shape=(1, *self.rx_position_shape),
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
+                focals=Bounded(
+                    low=self.focal_low,
+                    high=self.focal_high,
+                    shape=(1, *self.init_focals.shape),
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
+                rf_positions=Bounded(
+                    low=-100,
+                    high=100,
+                    shape=(1, *self.init_focals.shape),
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
+                prev_rss=UnboundedContinuous(
+                    shape=(1, self.num_rx), dtype=torch.float32, device=self.device
+                ),
+                cur_rss=UnboundedContinuous(
+                    shape=(1, self.num_rx), dtype=torch.float32, device=self.device
+                ),
+                shape=(1,),
+            ),
+            shape=(1,),
+            device=self.device,
+        )
+        # self.state_spec = self.observation_spec.clone()
+        self.action_spec = Composite(
+            agents=Composite(
+                action=BoundedContinuous(
+                    low=-0.7,
+                    high=0.7,
+                    shape=(1, *self.init_focals.shape),
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
+                shape=(1,),
+            ),
+            shape=(1,),
+            device=self.device,
+        )
+
+        self.reward_spec = Composite(
+            agents=Composite(
+                reward=Unbounded(shape=(1, self.n_agents, 1), device=self.device),
+                shape=(1,),
+            ),
+            shape=(1,),
+            device=self.device,
+        )
+
+        self.done_spec = Composite(
+            done=Categorical(
+                n=2,
+                shape=(1, 1),
+                dtype=torch.bool,
+                device=self.device,
+            ),
+            terminated=Categorical(
+                n=2,
+                shape=(1, 1),
+                dtype=torch.bool,
+                device=self.device,
+            ),
+            shape=(1,),
+            device=self.device,
+        )
+
+    def _set_seed(self, seed: Optional[int]):
+        rng = torch.manual_seed(seed)
+        self.rng = rng
+
+    def _init_manager(self, sionna_config):
+        """
+        Initialize the manager for the environment.
+        This is called when the environment is created.
+        """
+        if self.mgr is not None:
+            self.mgr.shutdown()
+            self.mgr = None
+        self.mgr = AutoRestartManager(sionna_config, self.num_runs_before_restart)
+
+    def close(self):
+        """Close the environment."""
+        # release the cuda
+        if self.mgr is not None:
+            self.mgr.shutdown()
+            self.mgr = None
+        # clear CUDA
+        torch.cuda.empty_cache()
+        super().close()
+
+
+def _add_batch_dim_(tensordict: TensorDictBase, device: str) -> TensorDictBase:
+    """
+    Add batch dimension to the tensordict.
+    This is useful for environments that expect a batch dimension.
+    """
+    for key in tensordict.keys():
+        if "action" not in key and "reward" not in key:
+            if isinstance(tensordict[key], torch.Tensor):
+                tensordict[key] = tensordict[key].unsqueeze(0)
+            else:
+                tensordict[key] = torch.tensor(tensordict[key], device=device).unsqueeze(0)
