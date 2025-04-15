@@ -389,7 +389,10 @@ def main(config: TrainConfig):
             )
             episode_reward_mean_list.append(episode_reward_mean)
             logs = {
-                "train_reward/episode_reward_mean": episode_reward_mean,
+                "train/episode_reward_mean": episode_reward_mean,
+                "train/loss_objective": loss_vals["loss_objective"].item(),
+                "train/loss_critic": loss_vals["loss_critic"].item(),
+                "train/loss_entropy": loss_vals["loss_entropy"].item(),
             }
             wandb.log({**logs}, step=idx)
             torch.save(
