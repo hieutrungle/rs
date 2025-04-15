@@ -97,21 +97,20 @@ class TrainConfig:
     eval_ep_len: int = 75  # the maximum length of an episode
 
     # Sampling
-    frames_per_batch = 500  # Number of team frames collected per training iteration
-    n_iters = 200  # Number of sampling and training iterations
-    total_frames = frames_per_batch * n_iters
+    frames_per_batch: int = 500  # Number of team frames collected per training iteration
+    n_iters: int = 200  # Number of sampling and training iterations
 
     # Training
-    num_epochs = 40  # Number of optimization steps per training iteration
-    minibatch_size = 100  # Size of the mini-batches in each optimization step
-    lr = 3e-4  # Learning rate
-    max_grad_norm = 1.0  # Maximum norm for the gradients
+    num_epochs: int = 40  # Number of optimization steps per training iteration
+    minibatch_size: int = 100  # Size of the mini-batches in each optimization step
+    lr: float = 3e-4  # Learning rate
+    max_grad_norm: float = 1.0  # Maximum norm for the gradients
 
     # PPO
-    clip_epsilon = 0.2  # clip value for PPO loss
-    gamma = 0.985  # discount factor
-    lmbda = 0.9  # lambda for generalised advantage estimation
-    entropy_eps = 1e-4  # coefficient of the entropy term in the PPO loss
+    clip_epsilon: float = 0.2  # clip value for PPO loss
+    gamma: float = 0.985  # discount factor
+    lmbda: float = 0.9  # lambda for generalised advantage estimation
+    entropy_eps: float = 1e-4  # coefficient of the entropy term in the PPO loss
 
     # Wandb logging
     wandb_mode: str = "online"  # wandb mode
@@ -132,7 +131,8 @@ class TrainConfig:
         #     raise ValueError("Load eval model is required for evaluation")
 
         utils.mkdir_not_exists(self.checkpoint_dir)
-        utils.mkdir_not_exists(self.replay_buffer_dir)
+
+        self.total_frames: int = self.frames_per_batch * self.n_iters
 
         device = pytorch_utils.init_gpu()
         self.device = device
