@@ -90,3 +90,17 @@ def track_gpu_usage():
     gpus_usage = [gpu.load for gpu in gpus]
     gpus_memory = [gpu.memoryUtil for gpu in gpus]
     return np.mean(gpus_usage) * 100, np.mean(gpus_memory) * 100
+
+
+# Logging
+def log_args(args) -> None:
+    """Logs arguments to the console."""
+    print(f"{'*'*23} ARGS BEGIN {'*'*23}")
+    message = ""
+    for k, v in args.__dict__.items():
+        if isinstance(v, str):
+            message += f"{k} = '{v}'\n"
+        else:
+            message += f"{k} = {v}\n"
+    print(f"{message}")
+    print(f"{'*'*24} ARGS END {'*'*24}\n")
