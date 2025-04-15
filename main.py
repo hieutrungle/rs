@@ -207,25 +207,20 @@ def main(config: TrainConfig):
     torch.multiprocessing.set_start_method("forkserver", force=True)
     pytorch_utils.init_seed(config.seed)
 
-    envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
-    ob_spec = envs.observation_spec
-    ac_spec = envs.action_spec
+    # envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
     # check_env_specs(envs)
 
-    # envs = ParallelEnv(
-    #     config.num_envs,
-    #     [make_env(config, idx) for idx in range(config.num_envs)],
-    #     mp_start_method="forkserver",
-    #     shared_memory=False,
-    # )
+    envs = ParallelEnv(
+        config.num_envs,
+        [make_env(config, idx) for idx in range(config.num_envs)],
+        mp_start_method="forkserver",
+        shared_memory=False,
+    )
+    ob_spec = envs.observation_spec
+    ac_spec = envs.action_spec
+
     envs = transform_envs(envs, config)
     envs.transform[0].init_stats(num_iter=config.ep_len * 3, reduce_dim=(0, 1, 2), cat_dim=1)
-
-    # print("observation_spec:", envs.observation_spec)
-    # print("state_spec:", envs.state_spec)
-    # print(f"action_spec:", envs.action_spec)
-    # print("reward_spec:", envs.reward_spec)
-
     # batch_size rollout:
     # (num_envs, env_batch, n_rollout_steps) = (num_envs, 1, n_rollout_steps)
 
