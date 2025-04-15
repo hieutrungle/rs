@@ -219,7 +219,7 @@ def main(config: TrainConfig):
     #     shared_memory=False,
     # )
     envs = transform_envs(envs, config)
-    envs.transform[0].init_stats(num_iter=100, reduce_dim=(0, 1, 2), cat_dim=1)
+    envs.transform[0].init_stats(num_iter=config.ep_len * 3, reduce_dim=(0, 1, 2), cat_dim=1)
 
     # print("observation_spec:", envs.observation_spec)
     # print("state_spec:", envs.state_spec)

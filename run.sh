@@ -38,5 +38,5 @@ echo Blender directory: $BLENDER_DIR
 echo Coverage map directory: $SOURCE_DIR
 echo -e Assets directory: $ASSETS_DIR '\n'
 
-python ./main.py --command "train" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --source_dir "/home/hieule/research/rs/" --wandb "offline" --num_envs 2
+python ./main.py --command "train" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --source_dir "/home/hieule/research/rs/" --num_envs 5
 # python ./main.py --command "eval" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --wandb "offline" --num_envs 1
