@@ -226,8 +226,34 @@ def main(config: TrainConfig):
     ob_spec = envs.observation_spec
     ac_spec = envs.action_spec
 
-    envs = transform_envs(envs, config)
-    envs.transform[0].init_stats(num_iter=int(config.ep_len * 3), reduce_dim=(0, 1, 2), cat_dim=1)
+    checkpoint = None
+    if config.load_model != "-1":
+        checkpoint = torch.load(config.load_model)
+        print(f"Loaded checkpoint from {config.load_model}")
+        ob_norm_transform = checkpoint["ob_norm_transform"]
+        loc = ob_norm_transform["loc"]
+        scale = ob_norm_transform["scale"]
+    else:
+        print("No checkpoint loaded, initializing observation normalization transform")
+        loc, scale = None, None
+
+    envs = TransformedEnv(
+        envs,
+        Compose(
+            ObservationNorm(
+                loc=loc,
+                scale=scale,
+                in_keys=[("agents", "observation")],
+                out_keys=[("agents", "observation")],
+            ),
+            DoubleToFloat(),
+            StepCounter(max_steps=config.ep_len),
+            RewardSum(in_keys=[envs.reward_key], out_keys=[("agents", "episode_reward")]),
+        ),
+    )
+
+    if loc is None and scale is None:
+        envs.transform[0].init_stats(num_iter=config.ep_len * 3, reduce_dim=(0, 1, 2), cat_dim=1)
     # batch_size rollout:
     # (num_envs, env_batch, n_rollout_steps) = (num_envs, 1, n_rollout_steps)
 
@@ -364,6 +390,13 @@ def main(config: TrainConfig):
             ),
         }
 
+        if checkpoint:
+            policy.load_state_dict(checkpoint["policy"])
+            critic.load_state_dict(checkpoint["critic"])
+            loss_module.load_state_dict(checkpoint["loss_module"])
+            optimizers["loss_actor"].load_state_dict(checkpoint["optimizer_actor"])
+            optimizers["loss_value"].load_state_dict(checkpoint["optimizer_value"])
+
         def process_batch(tensordict_data: TensorDictBase) -> TensorDictBase:
             """
             If the `(group, "terminated")` and `(group, "done")` keys are not present, create them by expanding
@@ -444,6 +477,9 @@ def main(config: TrainConfig):
                     "policy": policy.state_dict(),
                     "critic": critic.state_dict(),
                     "loss_module": loss_module.state_dict(),
+                    "optimizer_actor": optimizers["loss_actor"].state_dict(),
+                    "optimizer_value": optimizers["loss_value"].state_dict(),
+                    "ob_norm_transform": envs.transform[0].state_dict(),
                 },
                 os.path.join(config.checkpoint_dir, f"checkpoint_{iteration}.pt"),
             )
