@@ -328,7 +328,17 @@ def main(config: TrainConfig):
         )
         GAE = loss_module.value_estimator
 
+        # optimizer
         optim = torch.optim.Adam(loss_module.parameters(), lr=config.lr)
+
+        if config.load_model != "-1":
+            # Load the model
+            checkpoint = torch.load(config.load_model)
+            policy.load_state_dict(checkpoint["policy"])
+            critic.load_state_dict(checkpoint["critic"])
+            loss_module.load_state_dict(checkpoint["loss_module"])
+            optim.load_state_dict(checkpoint["optimizer"])
+
         pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
 
         episode_reward_mean_list = []
@@ -410,7 +420,8 @@ def main(config: TrainConfig):
     finally:
         gc.collect()
         torch.cuda.empty_cache()
-        envs.close()
+        if not envs.is_closed:
+            envs.close()
 
     # print("Total step:", total_step)
     # print(f"Time taken for rollout: {end_time - start_time:.4f} s")
