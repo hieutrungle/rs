@@ -230,7 +230,7 @@ def main(config: TrainConfig):
         if envs.is_closed:
             envs.start()
         n_agents = list(envs.n_agents)[0]
-        shared_parameters_policy = True
+        shared_parameters_policy = False
         policy_net = torch.nn.Sequential(
             MultiAgentMLP(
                 # n_obs_per_agent
@@ -269,7 +269,7 @@ def main(config: TrainConfig):
             return_log_prob=True,
         )  # we'll need the log-prob for the PPO loss
 
-        share_parameters_critic = True
+        share_parameters_critic = False
         mappo = True
 
         critic_net = MultiAgentMLP(
