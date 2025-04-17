@@ -105,7 +105,6 @@ class SimulationWorker(mp.Process):
                     sig_map = SignalCoverage(self.sionna_config, 0)
                     params = (sig_map, task_id)
                     result = self._run_simulation(*params)
-                    print(f"results: {result}")
 
                     # 3) return the result to the main process
                     # Attempt to send the result to the main process
