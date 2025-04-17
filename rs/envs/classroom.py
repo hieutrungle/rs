@@ -155,7 +155,6 @@ class Classroom(EnvBase):
         focals = tensordict["agents", "focals"]
         observation = torch.cat([rx_positions, rf_positions, focals], dim=-1)
         tensordict["agents", "observation"] = observation
-        print(f"observation: {observation}\n")
 
     def _reset(self, tensordict: TensorDict = None) -> TensorDict:
 
@@ -266,9 +265,6 @@ class Classroom(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        print(f"cur_rss: {cur_rss}")
-        print(f"prev_rss: {prev_rss}")
-
         w1 = 0.1
         rf1 = cur_rss[:, 0:1, 0:1]
         rf2 = cur_rss[:, 1:2, 1:2]
@@ -279,11 +275,8 @@ class Classroom(EnvBase):
         rf2_diff = rf2 - prev_rss[:, 1:2, 1:2]
         rfs_diff = torch.cat([rf1_diff, rf2_diff], dim=1)
 
-        print(f"rfs: {rfs}")
-        print(f"rfs_diff: {rfs_diff}")
-
         reward = 0.1 / self.num_rf * (w1 * rfs + w2 * rfs_diff)
-        print(f"reward: {reward}")
+
         return reward
 
     def _make_spec(self):
