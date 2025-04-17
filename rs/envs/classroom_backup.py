@@ -56,7 +56,7 @@ class Classroom(EnvBase):
         if seed is None:
             seed = torch.empty((), dtype=torch.int64).random_().item()
         self.set_seed(seed)
-        torch.manual_seed(seed)
+
         self.np_rng = np.random.default_rng(seed)
         self.default_sionna_config = copy.deepcopy(sionna_config)
         self.num_runs_before_restart = num_runs_before_restart
@@ -66,6 +66,9 @@ class Classroom(EnvBase):
             sionna_config["rx_positions"], dtype=torch.float32, device=device
         )
         rx_positions = rx_positions.unsqueeze(0)
+        rx_positions = torch.repeat_interleave(
+            rx_positions, len(sionna_config["rf_positions"]), dim=0
+        )
         self.rx_position_shape = rx_positions.shape
         self.num_rx = len(sionna_config["rx_positions"])
 
@@ -75,40 +78,43 @@ class Classroom(EnvBase):
         self.init_focals = torch.tensor(
             [[0.0, 5.5, 2.0] for _ in range(self.num_rf)], dtype=torch.float32, device=device
         )
-        self.init_focals = self.init_focals.unsqueeze(0)
-        self.focal_low = torch.tensor([[[-10.0, -10.0, -4], [-6.5, -10.0, -4.0]]], device=device)
-        self.focal_high = torch.tensor([[[6.5, 10.0, 5.0], [10.0, 10.0, 5.0]]], device=device)
+        self.focal_low = torch.tensor([[[-12.5, -12.5, -10], [-6.5, -12.5, -10.0]]], device=device)
+        self.focal_high = torch.tensor([[[6.5, 12.5, 10.0], [12.5, 12.5, 10.0]]], device=device)
 
         # observations: focal points, rx_positions, rf_positions
         # actions: delta_focal_points
         # rewards: reward
         # done: done
-        self.rx_pos_ranges = [
-            [[-3.5, -0.2], [-1.0, 2.0]],
-            [[0.2, 3.5], [-1.0, 2.0]],
-            # [[-3.5, -0.2], [-5.5, -1.5]],
-            # [[0.2, 3.5], [-5.5, -1.5]],
-        ]
 
         # flatten all the tensors for observation
         rf_positions = torch.tensor(
             sionna_config["rf_positions"], dtype=torch.float32, device=device
-        ).unsqueeze(0)
-        tmp_observation = torch.cat([rx_positions, rf_positions, self.init_focals], dim=-1)
+        )
+        rx_positions = rx_positions.view(len(rf_positions), -1)
+        rf_positions = rf_positions.view(len(rf_positions), -1)
+        focals = self.init_focals.view(len(rf_positions), -1)
+
+        tmp_observation = torch.cat([rx_positions, rf_positions, focals], dim=1)
         self.observation_shape = tmp_observation.shape
         rx_low = torch.ones_like(rx_positions, device=device) * (-100)
         rx_high = torch.ones_like(rx_positions, device=device) * 100
         rf_low = torch.ones_like(rf_positions, device=device) * (-100)
         rf_high = torch.ones_like(rf_positions, device=device) * 100
+        focals_low = self.focal_low[0]
+        focals_high = self.focal_high[0]
 
-        self.observation_low = torch.cat([rx_low, rf_low, self.focal_low], dim=-1)
-        self.observation_high = torch.cat([rx_high, rf_high, self.focal_high], dim=-1)
+        self.observation_low = torch.cat([rx_low, rf_low, focals_low], dim=1)
+        self.observation_high = torch.cat([rx_high, rf_high, focals_high], dim=1)
 
-        self.focals = None
-        self.rf_positions = None
-        self.rx_positions = None
         self.mgr = None
         self._make_spec()
+
+        self.rx_pos_ranges = [
+            [[0.2, 3.5], [-1.0, 2.0]],
+            [[0.2, 3.5], [-5.5, -1.5]],
+            [[-3.5, -0.2], [-1.0, 2.0]],
+            [[-3.5, -0.2], [-5.5, -1.5]],
+        ]
 
     def _is_eligible(self, pt, obstacle_pos, rx_pos):
         """
@@ -153,43 +159,50 @@ class Classroom(EnvBase):
         rf_positions = tensordict["agents", "rf_positions"]
         rx_positions = tensordict["agents", "rx_positions"]
         focals = tensordict["agents", "focals"]
+        # flatten all the tensors for observation
+        rf_shape = rf_positions.shape
+        rx_positions = rx_positions.view(rf_shape[0], rf_shape[1], -1)
+        rf_positions = rf_positions.view(rf_shape[0], rf_shape[1], -1)
+        focals = focals.view(rf_shape[0], rf_shape[1], -1)
+
         observation = torch.cat([rx_positions, rf_positions, focals], dim=-1)
         tensordict["agents", "observation"] = observation
-        print(f"observation: {observation}\n")
 
     def _reset(self, tensordict: TensorDict = None) -> TensorDict:
 
         sionna_config = copy.deepcopy(self.default_sionna_config)
-        rf_positions = sionna_config["rf_positions"]
-        rf_positions = torch.tensor(rf_positions, dtype=torch.float32, device=self.device)
-        rf_positions = rf_positions.unsqueeze(0)
-        self.rf_positions = rf_positions
+        rf_positions = torch.tensor(
+            sionna_config["rf_positions"], dtype=torch.float32, device=self.device
+        )
 
         # // TODO: Initialize/reposition receivers
         rx_positions = sionna_config["rx_positions"]
         rx_positions = self._prepare_rx_positions(len(rx_positions))
         sionna_config["rx_positions"] = rx_positions
+
         rx_positions = torch.tensor(rx_positions, dtype=torch.float32, device=self.device)
         rx_positions = rx_positions.unsqueeze(0)
-        self.rx_positions = rx_positions
+        rx_positions = torch.repeat_interleave(rx_positions, len(rf_positions), dim=0)
 
         # Initialize the environment using the Sionna configuration
         self._init_manager(sionna_config)
 
         # // TODO: Initialize focal points of reflectors
         # delta_focals = self.np_rng.uniform(low=-0.001, high=0.001, size=(self.init_focals.shape))
-        delta_focals = torch.randn_like(self.init_focals) * 1.5
-        focals = self.init_focals + delta_focals
-        self.focals = torch.clamp(focals, self.focal_low, self.focal_high)
+        delta_focals = self.np_rng.uniform(low=-1.5, high=1.5, size=(self.init_focals.shape))
+        delta_focals = np.expand_dims(delta_focals, axis=0)
+        delta_focals = torch.tensor(delta_focals, dtype=torch.float32, device=self.device)
+        focals = self.init_focals.unsqueeze(0) + delta_focals
+        focals = torch.clamp(focals, self.focal_low, self.focal_high)
 
-        self.cur_rss = self._get_rss(self.focals)
+        self.cur_rss = self._get_rss(focals)
         self.prev_rss = self.cur_rss.clone().detach()
 
         out = {
             "agents": {
-                "rf_positions": self.rf_positions,
-                "rx_positions": self.rx_positions,
-                "focals": self.focals.clone().detach(),
+                "rf_positions": rf_positions.unsqueeze(0),
+                "rx_positions": rx_positions.unsqueeze(0),
+                "focals": focals.clone().detach(),
                 "prev_rss": self.prev_rss,
                 "cur_rss": self.cur_rss,
             }
@@ -205,15 +218,15 @@ class Classroom(EnvBase):
         # tensordict  contains the current state of the environment and the action taken
         # by the agent.
         delta_focals = tensordict["agents", "action"]
-        self.focals = self.focals + delta_focals
-        self.focals = torch.clamp(self.focals, self.focal_low, self.focal_high)
+        focals = tensordict["agents", "focals"] + delta_focals
+        focals = torch.clamp(focals, self.focal_low, self.focal_high)
 
         # Get rss from the simulation
         # ` TODO: prev_rss and cur_rss may need to be normalized from the SimulationWorker
         # // TODO: The rss now is not normalized
         # ` TODO: Now it is normalized!!
         self.prev_rss = self.cur_rss
-        self.cur_rss = self._get_rss(self.focals)
+        self.cur_rss = self._get_rss(focals)
         reward = self._calculate_reward(self.cur_rss, self.prev_rss)
 
         done = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
@@ -221,9 +234,9 @@ class Classroom(EnvBase):
 
         out = {
             "agents": {
-                "rf_positions": self.rf_positions,
-                "rx_positions": self.rx_positions,
-                "focals": self.focals.clone().detach(),
+                "rf_positions": tensordict["agents", "rf_positions"],
+                "rx_positions": tensordict["agents", "rx_positions"],
+                "focals": focals.clone().detach(),
                 "prev_rss": self.prev_rss,
                 "cur_rss": self.cur_rss,
                 "reward": reward,
@@ -266,24 +279,17 @@ class Classroom(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        print(f"cur_rss: {cur_rss}")
-        print(f"prev_rss: {prev_rss}")
-
-        w1 = 0.1
+        w1 = 0.5
         rf1 = cur_rss[:, 0:1, 0:1]
         rf2 = cur_rss[:, 1:2, 1:2]
         rfs = torch.cat([rf1, rf2], dim=1)
 
-        w2 = 0.5
+        w2 = 1.0
         rf1_diff = rf1 - prev_rss[:, 0:1, 0:1]
         rf2_diff = rf2 - prev_rss[:, 1:2, 1:2]
         rfs_diff = torch.cat([rf1_diff, rf2_diff], dim=1)
 
-        print(f"rfs: {rfs}")
-        print(f"rfs_diff: {rfs_diff}")
-
         reward = 0.1 / self.num_rf * (w1 * rfs + w2 * rfs_diff)
-        print(f"reward: {reward}")
         return reward
 
     def _make_spec(self):
@@ -294,30 +300,30 @@ class Classroom(EnvBase):
         self.observation_spec = Composite(
             agents=Composite(
                 observation=Bounded(
-                    low=self.observation_low,
-                    high=self.observation_high,
-                    shape=self.observation_shape,
+                    low=self.observation_low.unsqueeze(0),
+                    high=self.observation_high.unsqueeze(0),
+                    shape=(1, *self.observation_shape),
                     dtype=torch.float32,
                     device=self.device,
                 ),
                 rx_positions=Bounded(
                     low=-100,
                     high=100,
-                    shape=self.init_focals.shape,
+                    shape=(1, *self.rx_position_shape),
                     dtype=torch.float32,
                     device=self.device,
                 ),
                 focals=Bounded(
                     low=self.focal_low,
                     high=self.focal_high,
-                    shape=self.init_focals.shape,
+                    shape=(1, *self.init_focals.shape),
                     dtype=torch.float32,
                     device=self.device,
                 ),
                 rf_positions=Bounded(
                     low=-100,
                     high=100,
-                    shape=self.init_focals.shape,
+                    shape=(1, *self.init_focals.shape),
                     dtype=torch.float32,
                     device=self.device,
                 ),
@@ -338,7 +344,7 @@ class Classroom(EnvBase):
                 action=BoundedContinuous(
                     low=-0.7,
                     high=0.7,
-                    shape=self.init_focals.shape,
+                    shape=(1, *self.init_focals.shape),
                     dtype=torch.float32,
                     device=self.device,
                 ),

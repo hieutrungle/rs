@@ -22,7 +22,7 @@ torch.multiprocessing.set_start_method("forkserver", force=True)
 from torchrl.envs import check_env_specs
 import torchrl
 from torchrl.envs import ParallelEnv, EnvBase, SerialEnv
-from tensordict import TensorDict
+from tensordict import TensorDict, TensorDictBase
 import time
 import gc
 
@@ -46,6 +46,7 @@ from torchrl.data.replay_buffers.storages import LazyTensorStorage
 
 # Env
 from torchrl.envs import (
+    Transform,
     Compose,
     RewardSum,
     TransformedEnv,
@@ -219,16 +220,14 @@ def main(config: TrainConfig):
     ob_spec = envs.observation_spec
     ac_spec = envs.action_spec
 
+    observation_shape = ob_spec["agents", "observation"].shape
+    loc = torch.zeros(observation_shape, device=config.device)
+    scale = torch.ones(observation_shape, device=config.device) * 8.0
+
     checkpoint = None
     if config.load_model != "-1":
         checkpoint = torch.load(config.load_model)
         print(f"Loaded checkpoint from {config.load_model}")
-        ob_norm_transform = checkpoint["ob_norm_transform"]
-        loc = ob_norm_transform["loc"]
-        scale = ob_norm_transform["scale"]
-    else:
-        print("No checkpoint loaded, initializing observation normalization transform")
-        loc, scale = None, None
 
     envs = TransformedEnv(
         envs,
@@ -238,6 +237,7 @@ def main(config: TrainConfig):
                 scale=scale,
                 in_keys=[("agents", "observation")],
                 out_keys=[("agents", "observation")],
+                standard_normal=True,
             ),
             DoubleToFloat(),
             StepCounter(max_steps=config.ep_len),
