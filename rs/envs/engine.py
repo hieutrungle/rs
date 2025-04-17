@@ -79,6 +79,9 @@ class SimulationWorker(mp.Process):
             distances[i] = np.linalg.norm(rx_pos - rf_positions, axis=1)
         self.factor = np.power(distances, 2.2)
 
+        self.num_rx = len(rx_positions)
+        self.num_rf = len(rf_positions)
+
     def run(self):
         """TF 2.x simulation with forkserver-compatible initialization"""
         # Configure GPU after fork
@@ -102,6 +105,7 @@ class SimulationWorker(mp.Process):
                     sig_map = SignalCoverage(self.sionna_config, 0)
                     params = (sig_map, task_id)
                     result = self._run_simulation(*params)
+                    print(f"results: {result}")
 
                     # 3) return the result to the main process
                     # Attempt to send the result to the main process
@@ -159,13 +163,13 @@ class SimulationWorker(mp.Process):
         rx_cell_indices = rm.rx_cell_indices
 
         # ` TODO: rss may need to be normalized from the SimulationWorker
-        rx_rss_dbs = []
+        rx_rss_dbs = np.full((self.num_rf, self.num_rx), -100.0)
         for rx_idx in range(rx_cell_indices.shape[1]):
             rx_rss = rss[:, rx_cell_indices[1][rx_idx], rx_cell_indices[0][rx_idx]]
             # normalizd by multiply with factor = distance^2
             rx_rss = rx_rss * self.factor[rx_idx]
-            rx_rss_db = np.mean(sionna.rt.utils.watt_to_dbm(rx_rss))
-            rx_rss_dbs.append(rx_rss_db)
+            rx_rss_db = sionna.rt.utils.watt_to_dbm(rx_rss)
+            rx_rss_dbs[:, rx_idx] = rx_rss_db
         rx_rss_dbs = np.array(rx_rss_dbs)
 
         if self.rendering:

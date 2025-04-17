@@ -73,10 +73,10 @@ class Classroom(EnvBase):
         self.num_rx = len(sionna_config["rx_positions"])
 
         # Init focal points
-        num_rf = len(sionna_config["rf_positions"])
-        self.n_agents = num_rf
+        self.num_rf = len(sionna_config["rf_positions"])
+        self.n_agents = self.num_rf
         self.init_focals = torch.tensor(
-            [[0.0, 5.5, 2.0] for _ in range(num_rf)], dtype=torch.float32, device=device
+            [[0.0, 5.5, 2.0] for _ in range(self.num_rf)], dtype=torch.float32, device=device
         )
         self.focal_low = torch.tensor([[[-12.5, -12.5, -10], [-6.5, -12.5, -10.0]]], device=device)
         self.focal_high = torch.tensor([[[6.5, 12.5, 10.0], [12.5, 12.5, 10.0]]], device=device)
@@ -279,18 +279,17 @@ class Classroom(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        w1 = 1
-        average_rss = torch.mean(cur_rss)
-        w2 = 0.6
-        average_diff = torch.mean(cur_rss - prev_rss)
-        # print(f"cur_rss: {cur_rss}")
-        # print(f"average_rss: {average_rss}")
-        # print(f"average_diff: {average_diff}")
+        w1 = 0.5
+        rf1 = cur_rss[:, 0:1, 0:1]
+        rf2 = cur_rss[:, 1:2, 1:2]
+        rfs = torch.cat([rf1, rf2], dim=1)
 
-        reward = 0.1 / self.num_rx * (w1 * average_rss + w2 * average_diff)
-        reward = reward.unsqueeze(0).unsqueeze(0)
-        reward = reward.expand(self.reward_spec.shape)
-        # print(f"reward: {reward}")
+        w2 = 1.0
+        rf1_diff = rf1 - prev_rss[:, 0:1, 0:1]
+        rf2_diff = rf2 - prev_rss[:, 1:2, 1:2]
+        rfs_diff = torch.cat([rf1_diff, rf2_diff], dim=1)
+
+        reward = 0.1 / self.num_rf * (w1 * rfs + w2 * rfs_diff)
         return reward
 
     def _make_spec(self):
@@ -329,10 +328,10 @@ class Classroom(EnvBase):
                     device=self.device,
                 ),
                 prev_rss=UnboundedContinuous(
-                    shape=(1, self.num_rx), dtype=torch.float32, device=self.device
+                    shape=(1, self.num_rf, self.num_rx), dtype=torch.float32, device=self.device
                 ),
                 cur_rss=UnboundedContinuous(
-                    shape=(1, self.num_rx), dtype=torch.float32, device=self.device
+                    shape=(1, self.num_rf, self.num_rx), dtype=torch.float32, device=self.device
                 ),
                 shape=(1,),
             ),
