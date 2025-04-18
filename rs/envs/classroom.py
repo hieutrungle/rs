@@ -205,7 +205,16 @@ class Classroom(EnvBase):
         # by the agent.
         delta_focals = tensordict["agents", "action"]
         self.focals = self.focals + delta_focals
+
+        # if the z values of any focal point is at the boundary of low and high, terminated = True
+        terminated = torch.any(
+            torch.logical_or(self.focals < self.focal_low, self.focals > self.focal_high)
+        )
+        terminated = terminated.unsqueeze(0)
+        done = terminated.clone()
+
         self.focals = torch.clamp(self.focals, self.focal_low, self.focal_high)
+        # terminated = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
 
         # Get rss from the simulation
         # ` TODO: prev_rss and cur_rss may need to be normalized from the SimulationWorker
@@ -214,14 +223,6 @@ class Classroom(EnvBase):
         self.prev_rss = self.cur_rss
         self.cur_rss = self._get_rss(self.focals)
         reward = self._calculate_reward(self.cur_rss, self.prev_rss)
-
-        done = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
-        # if the z values of any focal point is at the boundary of low and high, terminated = True
-        terminated = torch.any(
-            torch.logical_or(self.focals < self.focal_low, self.focals > self.focal_high)
-        )
-        terminated = terminated.unsqueeze(0)
-        # terminated = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
 
         out = {
             "agents": {
