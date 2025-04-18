@@ -274,17 +274,20 @@ class Classroom(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        w1 = 0.1
+        cur_rss = copy.deepcopy(cur_rss) + 40
+        prev_rss = copy.deepcopy(prev_rss) + 40
+
+        w1 = 1.2
         rf1 = cur_rss[:, 0:1, 0:1]
         rf2 = cur_rss[:, 1:2, 1:2]
         rfs = torch.cat([rf1, rf2], dim=1)
 
-        w2 = 0.5
+        w2 = 0.1
         rf1_diff = rf1 - prev_rss[:, 0:1, 0:1]
         rf2_diff = rf2 - prev_rss[:, 1:2, 1:2]
         rfs_diff = torch.cat([rf1_diff, rf2_diff], dim=1)
 
-        reward = 0.1 / self.num_rf * (w1 * rfs + w2 * rfs_diff)
+        reward = 0.3 / self.num_rf * (w1 * rfs + w2 * rfs_diff)
 
         return reward
 
@@ -338,8 +341,8 @@ class Classroom(EnvBase):
         self.action_spec = Composite(
             agents=Composite(
                 action=BoundedContinuous(
-                    low=-0.7,
-                    high=0.7,
+                    low=-0.5,
+                    high=0.5,
                     shape=self.init_focals.shape,
                     dtype=torch.float32,
                     device=self.device,
