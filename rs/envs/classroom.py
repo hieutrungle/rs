@@ -216,7 +216,12 @@ class Classroom(EnvBase):
         reward = self._calculate_reward(self.cur_rss, self.prev_rss)
 
         done = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
-        terminated = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
+        # if the z values of any focal point is at the boundary of low and high, terminated = True
+        terminated = torch.any(
+            torch.logical_or(self.focals < self.focal_low, self.focals > self.focal_high)
+        )
+        terminated = terminated.unsqueeze(0)
+        # terminated = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
 
         out = {
             "agents": {
