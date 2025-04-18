@@ -207,11 +207,13 @@ class Classroom(EnvBase):
         self.focals = self.focals + delta_focals
 
         # if the z values of any focal point is at the boundary of low and high, terminated = True
-        terminated = torch.any(
+        truncated = torch.any(
             torch.logical_or(self.focals < self.focal_low, self.focals > self.focal_high)
         )
-        terminated = terminated.unsqueeze(0)
-        done = terminated.clone()
+        truncated = truncated.unsqueeze(0)
+        done = truncated.clone()
+        # set terminated to ba always False with same shape as truncated
+        terminated = torch.zeros_like(truncated, dtype=torch.bool, device=self.device)
 
         self.focals = torch.clamp(self.focals, self.focal_low, self.focal_high)
         # terminated = torch.tensor([False], dtype=torch.bool, device=self.device).unsqueeze(0)
@@ -235,6 +237,7 @@ class Classroom(EnvBase):
             },
             "done": done,
             "terminated": terminated,
+            "truncated": truncated,
         }
         out = TensorDict(out, device=self.device, batch_size=1)
         self._get_ob(out)
