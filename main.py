@@ -40,7 +40,7 @@ from tensordict.nn.distributions import NormalParamExtractor
 
 # Data collection
 from torchrl.collectors import SyncDataCollector
-from torchrl.data.replay_buffers import TensorDictReplayBuffer
+from torchrl.data.replay_buffers import TensorDictReplayBuffer, ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
 
@@ -353,91 +353,41 @@ def main(config: TrainConfig):
         loss_module.make_value_estimator(
             ValueEstimators.GAE, gamma=config.gamma, lmbda=config.lmbda
         )
-        GAE = loss_module.value_estimator
 
         # optimizer
         optim = torch.optim.Adam(loss_module.parameters(), lr=config.lr)
 
         if checkpoint:
+            print(f"Loading checkpoint from: {config.load_model}")
             policy.load_state_dict(checkpoint["policy"])
             critic.load_state_dict(checkpoint["critic"])
             loss_module.load_state_dict(checkpoint["loss_module"])
             optim.load_state_dict(checkpoint["optimizer"])
 
-        pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
-
-        episode_reward_mean_list = []
-        for idx, tensordict_data in enumerate(collector):
-
-            # We need to expand the done and terminated to match the reward shape (this is expected by the value estimator)
-            tensordict_data.set(
-                ("next", "agents", "done"),
-                tensordict_data.get(("next", "done"))
-                .unsqueeze(-1)
-                .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
+        if config.command == "train":
+            # Training
+            print("Training...")
+            train(
+                envs,
+                config,
+                collector,
+                policy,
+                critic,
+                loss_module,
+                optim,
+                replay_buffer,
             )
-            tensordict_data.set(
-                ("next", "agents", "terminated"),
-                tensordict_data.get(("next", "terminated"))
-                .unsqueeze(-1)
-                .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
-            )
-
-            with torch.no_grad():
-                # Compute GAE and add it to the data
-                GAE(
-                    tensordict_data,
-                    params=loss_module.critic_network_params,
-                    target_params=loss_module.target_critic_network_params,
-                )
-
-            data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
-            replay_buffer.extend(data_view)
-
-            for _ in range(config.num_epochs):
-                for _ in range(config.frames_per_batch // config.minibatch_size):
-                    subdata = replay_buffer.sample()
-                    loss_vals = loss_module(subdata)
-
-                    loss_value = (
-                        loss_vals["loss_objective"]
-                        + loss_vals["loss_critic"]
-                        + loss_vals["loss_entropy"]
-                    )
-
-                    loss_value.backward()
-
-                    torch.nn.utils.clip_grad_norm_(loss_module.parameters(), config.max_grad_norm)
-                    optim.step()
-                    optim.zero_grad()
-
-            collector.update_policy_weights_()
-
-            # Logging
-            done = tensordict_data.get(("next", "agents", "done"))
-            episode_reward_mean = (
-                tensordict_data.get(("next", "agents", "episode_reward"))[done].mean().item()
-            )
-            episode_reward_mean_list.append(episode_reward_mean)
-            logs = {
-                "train/episode_reward_mean": episode_reward_mean,
-                "train/loss_objective": loss_vals["loss_objective"].item(),
-                "train/loss_critic": loss_vals["loss_critic"].item(),
-                "train/loss_entropy": loss_vals["loss_entropy"].item(),
-            }
-            wandb.log({**logs}, step=idx)
-            torch.save(
-                {
-                    "policy": policy.state_dict(),
-                    "critic": critic.state_dict(),
-                    "loss_module": loss_module.state_dict(),
-                    "optimizer": optim.state_dict(),
-                    "ob_norm_transform": envs.transform[0].state_dict(),
-                },
-                os.path.join(config.checkpoint_dir, f"checkpoint_{idx}.pt"),
-            )
-            pbar.set_description(f"episode_reward_mean = {episode_reward_mean}", refresh=False)
-            pbar.update()
+        else:
+            # Evaluation
+            print("Evaluation...")
+            # if config.load_eval_model != "-1":
+            #     checkpoint = torch.load(config.load_eval_model)
+            #     policy.load_state_dict(checkpoint["policy"])
+            #     critic.load_state_dict(checkpoint["critic"])
+            #     loss_module.load_state_dict(checkpoint["loss_module"])
+            #     optim.load_state_dict(checkpoint["optimizer"])
+            eval(envs, config, policy)
+            print("Evaluation done")
 
     except Exception as e:
         print("Environment specs are not correct")
@@ -468,6 +418,110 @@ def transform_envs(envs, config: TrainConfig):
         ),
     )
     return envs
+
+
+def train(
+    envs: ParallelEnv,
+    config: TrainConfig,
+    collector: SyncDataCollector,
+    policy: TensorDictModule,
+    critic: TensorDictModule,
+    loss_module: ClipPPOLoss,
+    optim: torch.optim.Optimizer,
+    replay_buffer: ReplayBuffer,
+):
+    pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
+    GAE = loss_module.value_estimator
+    episode_reward_mean_list = []
+    for idx, tensordict_data in enumerate(collector):
+
+        # We need to expand the done and terminated to match the reward shape (this is expected by the value estimator)
+        tensordict_data.set(
+            ("next", "agents", "done"),
+            tensordict_data.get(("next", "done"))
+            .unsqueeze(-1)
+            .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
+        )
+        tensordict_data.set(
+            ("next", "agents", "terminated"),
+            tensordict_data.get(("next", "terminated"))
+            .unsqueeze(-1)
+            .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
+        )
+        tensordict_data.set(
+            ("next", "agents", "truncated"),
+            tensordict_data.get(("next", "truncated"))
+            .unsqueeze(-1)
+            .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
+        )
+
+        with torch.no_grad():
+            # Compute GAE and add it to the data
+            GAE(
+                tensordict_data,
+                params=loss_module.critic_network_params,
+                target_params=loss_module.target_critic_network_params,
+            )
+
+        data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
+        replay_buffer.extend(data_view)
+
+        for _ in range(config.num_epochs):
+            for _ in range(config.frames_per_batch // config.minibatch_size):
+                subdata = replay_buffer.sample()
+                loss_vals = loss_module(subdata)
+
+                loss_value = (
+                    loss_vals["loss_objective"]
+                    + loss_vals["loss_critic"]
+                    + loss_vals["loss_entropy"]
+                )
+
+                loss_value.backward()
+
+                torch.nn.utils.clip_grad_norm_(loss_module.parameters(), config.max_grad_norm)
+                optim.step()
+                optim.zero_grad()
+
+        collector.update_policy_weights_()
+
+        # Logging
+        done = tensordict_data.get(("next", "agents", "done"))
+        episode_reward_mean = (
+            tensordict_data.get(("next", "agents", "episode_reward"))[done].mean().item()
+        )
+        episode_reward_mean_list.append(episode_reward_mean)
+        logs = {
+            "train/episode_reward_mean": episode_reward_mean,
+            "train/loss_objective": loss_vals["loss_objective"].item(),
+            "train/loss_critic": loss_vals["loss_critic"].item(),
+            "train/loss_entropy": loss_vals["loss_entropy"].item(),
+        }
+        wandb.log({**logs}, step=idx)
+        torch.save(
+            {
+                "policy": policy.state_dict(),
+                "critic": critic.state_dict(),
+                "loss_module": loss_module.state_dict(),
+                "optimizer": optim.state_dict(),
+                "ob_norm_transform": envs.transform[0].state_dict(),
+            },
+            os.path.join(config.checkpoint_dir, f"checkpoint_{idx}.pt"),
+        )
+        pbar.set_description(f"episode_reward_mean = {episode_reward_mean}", refresh=False)
+        pbar.update()
+
+
+def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
+    with torch.no_grad():
+        envs.rollout(
+            max_steps=config.eval_ep_len,
+            policy=policy,
+            # callback=lambda env, _: env.render(),
+            auto_cast_to_device=True,
+            break_when_any_done=False,
+            break_when_all_done=True,
+        )
 
 
 @pyrallis.wrap()
