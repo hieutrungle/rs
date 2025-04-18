@@ -94,17 +94,17 @@ class TrainConfig:
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
     sionna_config_file: str = "-1"  # Sionna config file
     num_envs: int = 3  # the number of parallel environments
-    ep_len: int = 75  # the maximum length of an episode
-    eval_ep_len: int = 75  # the maximum length of an episode
+    ep_len: int = 50  # the maximum length of an episode
+    eval_ep_len: int = 50  # the maximum length of an episode
 
     # Sampling
-    frames_per_batch: int = 500  # Number of team frames collected per training iteration
-    n_iters: int = 200  # Number of sampling and training iterations
+    frames_per_batch: int = 300  # Number of team frames collected per training iteration
+    n_iters: int = 350  # Number of sampling and training iterations
 
     # Training
-    num_epochs: int = 40  # Number of optimization steps per training iteration
+    num_epochs: int = 30  # Number of optimization steps per training iteration
     minibatch_size: int = 100  # Size of the mini-batches in each optimization step
-    lr: float = 3e-4  # Learning rate
+    lr: float = 2e-4  # Learning rate
     max_grad_norm: float = 1.0  # Maximum norm for the gradients
 
     # PPO
