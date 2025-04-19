@@ -102,7 +102,7 @@ class TrainConfig:
     n_iters: int = 350  # Number of sampling and training iterations
 
     # Training
-    num_epochs: int = 30  # Number of optimization steps per training iteration
+    num_epochs: int = 25  # Number of optimization steps per training iteration
     minibatch_size: int = 100  # Size of the mini-batches in each optimization step
     lr: float = 2e-4  # Learning rate
     max_grad_norm: float = 1.0  # Maximum norm for the gradients
@@ -262,15 +262,40 @@ def main(config: TrainConfig):
             MultiAgentMLP(
                 # n_obs_per_agent
                 n_agent_inputs=ob_spec["agents", "observation"].shape[-1],
-                # 2 * n_actions_per_agents
-                n_agent_outputs=2 * ac_spec.shape[-1],  # 2 * n_actions_per_agents
+                n_agent_outputs=256,  # 2 * n_actions_per_agents
                 n_agents=n_agents,
-                #  the policies are decentralised (ie each agent will act from its observation)
                 centralised=False,
                 share_params=shared_parameters_policy,
                 device=config.device,
-                depth=2,
+                depth=0,
                 num_cells=256,
+                activation_class=torch.nn.ReLU6,
+            ),
+            torch.nn.ReLU6(),
+            # add Layer Norm
+            torch.nn.LayerNorm(256, device=config.device),
+            MultiAgentMLP(
+                n_agent_inputs=256,
+                n_agent_outputs=256,  # 2 * n_actions_per_agents
+                n_agents=n_agents,
+                centralised=False,
+                share_params=shared_parameters_policy,
+                device=config.device,
+                depth=0,
+                num_cells=256,
+                activation_class=torch.nn.ReLU6,
+            ),
+            torch.nn.ReLU6(),
+            torch.nn.LayerNorm(256, device=config.device),
+            MultiAgentMLP(
+                n_agent_inputs=256,
+                n_agent_outputs=2 * ac_spec.shape[-1],  # 2 * n_actions_per_agents
+                n_agents=n_agents,
+                centralised=False,
+                share_params=shared_parameters_policy,
+                device=config.device,
+                depth=1,
+                num_cells=128,
                 activation_class=torch.nn.Tanh,
             ),
             #  this will just separate the last dimension into two outputs: a loc and a non-negative scale
@@ -504,7 +529,6 @@ def train(
                 "critic": critic.state_dict(),
                 "loss_module": loss_module.state_dict(),
                 "optimizer": optim.state_dict(),
-                "ob_norm_transform": envs.transform[0].state_dict(),
             },
             os.path.join(config.checkpoint_dir, f"checkpoint_{idx}.pt"),
         )
