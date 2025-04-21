@@ -294,7 +294,7 @@ def main(config: TrainConfig):
                 centralised=False,
                 share_params=shared_parameters_policy,
                 device=config.device,
-                depth=0,
+                depth=1,
                 num_cells=128,
                 activation_class=torch.nn.Tanh,
             ),
