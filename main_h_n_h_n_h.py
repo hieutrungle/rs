@@ -267,24 +267,24 @@ def main(config: TrainConfig):
                 centralised=False,
                 share_params=shared_parameters_policy,
                 device=config.device,
-                depth=1,
+                depth=0,
                 num_cells=256,
                 activation_class=torch.nn.ReLU6,
             ),
-            # torch.nn.ReLU6(),
-            # # add Layer Norm
-            # torch.nn.LayerNorm(256, device=config.device),
-            # MultiAgentMLP(
-            #     n_agent_inputs=256,
-            #     n_agent_outputs=256,  # 2 * n_actions_per_agents
-            #     n_agents=n_agents,
-            #     centralised=False,
-            #     share_params=shared_parameters_policy,
-            #     device=config.device,
-            #     depth=0,
-            #     num_cells=256,
-            #     activation_class=torch.nn.ReLU6,
-            # ),
+            torch.nn.ReLU6(),
+            # add Layer Norm
+            torch.nn.LayerNorm(256, device=config.device),
+            MultiAgentMLP(
+                n_agent_inputs=256,
+                n_agent_outputs=256,  # 2 * n_actions_per_agents
+                n_agents=n_agents,
+                centralised=False,
+                share_params=shared_parameters_policy,
+                device=config.device,
+                depth=0,
+                num_cells=256,
+                activation_class=torch.nn.ReLU6,
+            ),
             torch.nn.ReLU6(),
             torch.nn.LayerNorm(256, device=config.device),
             MultiAgentMLP(
@@ -294,8 +294,8 @@ def main(config: TrainConfig):
                 centralised=False,
                 share_params=shared_parameters_policy,
                 device=config.device,
-                depth=1,
-                num_cells=256,
+                depth=0,
+                num_cells=128,
                 activation_class=torch.nn.Tanh,
             ),
             #  this will just separate the last dimension into two outputs: a loc and a non-negative scale
