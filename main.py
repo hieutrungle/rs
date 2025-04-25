@@ -39,7 +39,7 @@ from tensordict.nn import set_composite_lp_aggregate, TensorDictModule
 from tensordict.nn.distributions import NormalParamExtractor
 
 # Data collection
-from torchrl.collectors import SyncDataCollector
+from torchrl.collectors import SyncDataCollector, MultiSyncDataCollector
 from torchrl.data.replay_buffers import TensorDictReplayBuffer, ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
@@ -83,7 +83,7 @@ class TrainConfig:
     load_replay_buffer: str = "-1"  # the path to load the replay buffer
     source_dir: str = "-1"  # the path to the source code
     verbose: bool = False  # whether to log to console
-    seed: int = 1  # seed of the experiment
+    seed: int = 10  # seed of the experiment
     eval_seed: int = 111  # seed of the evaluation
     save_interval: int = 100  # the interval to save the model
     start_step: int = 0  # the starting step of the experiment
@@ -94,16 +94,16 @@ class TrainConfig:
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
     sionna_config_file: str = "-1"  # Sionna config file
     num_envs: int = 3  # the number of parallel environments
-    ep_len: int = 50  # the maximum length of an episode
-    eval_ep_len: int = 50  # the maximum length of an episode
+    ep_len: int = 70  # the maximum length of an episode
+    eval_ep_len: int = 70  # the maximum length of an episode
 
     # Sampling
-    frames_per_batch: int = 300  # Number of team frames collected per training iteration
-    n_iters: int = 350  # Number of sampling and training iterations
+    frames_per_batch: int = 601  # Number of team frames collected per training iteration
+    n_iters: int = 300  # Number of sampling and training iterations
 
     # Training
-    num_epochs: int = 25  # Number of optimization steps per training iteration
-    minibatch_size: int = 100  # Size of the mini-batches in each optimization step
+    num_epochs: int = 40  # Number of optimization steps per training iteration
+    minibatch_size: int = 200  # Size of the mini-batches in each optimization step
     lr: float = 2e-4  # Learning rate
     max_grad_norm: float = 1.0  # Maximum norm for the gradients
 
@@ -203,6 +203,8 @@ def main(config: TrainConfig):
     else:
         print(f"=" * 30 + "Evaluation" + "=" * 30)
 
+    utils.log_config(config.__dict__)
+
     # Reset the torch compiler if needed
     torch.compiler.reset()
     torch.multiprocessing.set_start_method("forkserver", force=True)
@@ -262,43 +264,15 @@ def main(config: TrainConfig):
             MultiAgentMLP(
                 # n_obs_per_agent
                 n_agent_inputs=ob_spec["agents", "observation"].shape[-1],
-                n_agent_outputs=256,  # 2 * n_actions_per_agents
-                n_agents=n_agents,
-                centralised=False,
-                share_params=shared_parameters_policy,
-                device=config.device,
-                depth=1,
-                num_cells=256,
-                activation_class=torch.nn.ReLU6,
-            ),
-            # torch.nn.ReLU6(),
-            # # add Layer Norm
-            # torch.nn.LayerNorm(256, device=config.device),
-            # MultiAgentMLP(
-            #     n_agent_inputs=256,
-            #     n_agent_outputs=256,  # 2 * n_actions_per_agents
-            #     n_agents=n_agents,
-            #     centralised=False,
-            #     share_params=shared_parameters_policy,
-            #     device=config.device,
-            #     depth=0,
-            #     num_cells=256,
-            #     activation_class=torch.nn.ReLU6,
-            # ),
-            torch.nn.ReLU6(),
-            torch.nn.LayerNorm(256, device=config.device),
-            MultiAgentMLP(
-                n_agent_inputs=256,
                 n_agent_outputs=2 * ac_spec.shape[-1],  # 2 * n_actions_per_agents
                 n_agents=n_agents,
                 centralised=False,
                 share_params=shared_parameters_policy,
                 device=config.device,
-                depth=1,
+                depth=2,
                 num_cells=256,
-                activation_class=torch.nn.Tanh,
+                activation_class=torch.nn.ReLU6,
             ),
-            #  this will just separate the last dimension into two outputs: a loc and a non-negative scale
             NormalParamExtractor(),
         )
 
@@ -347,12 +321,14 @@ def main(config: TrainConfig):
             policy,
             device=config.device,
             storing_device=config.device,
-            frames_per_batch=config.frames_per_batch,
-            total_frames=config.total_frames,
+            frames_per_batch=config.frames_per_batch * config.num_envs,
+            total_frames=config.total_frames * config.num_envs,
         )
 
         replay_buffer = TensorDictReplayBuffer(
-            storage=LazyTensorStorage(config.frames_per_batch, device=config.device),
+            storage=LazyTensorStorage(
+                config.frames_per_batch * config.num_envs, device=config.device
+            ),
             sampler=SamplerWithoutReplacement(),
             batch_size=config.minibatch_size,
         )
@@ -360,10 +336,14 @@ def main(config: TrainConfig):
         loss_module = ClipPPOLoss(
             actor_network=policy,
             critic_network=critic,
+            loss_critic_type="l2",
+            normalize_advantage=True,
+            normalize_advantage_exclude_dims=(0, 3),
             clip_epsilon=config.clip_epsilon,
+            entropy_bonus=config.entropy_eps > 0,
             entropy_coef=config.entropy_eps,
             # Important to avoid normalizing across the agent dimension
-            normalize_advantage=False,
+            # normalize_advantage=False,
         )
         loss_module.set_keys(  # We have to tell the loss where to find the keys
             reward=envs.reward_key,
@@ -522,7 +502,7 @@ def train(
             "train/loss_critic": loss_vals["loss_critic"].item(),
             "train/loss_entropy": loss_vals["loss_entropy"].item(),
         }
-        wandb.log({**logs}, step=idx)
+        wandb.log({**logs}, step=idx * config.frames_per_batch * config.num_envs)
         torch.save(
             {
                 "policy": policy.state_dict(),
