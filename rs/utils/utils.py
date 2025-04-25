@@ -104,3 +104,16 @@ def log_args(args) -> None:
             message += f"{k} = {v}\n"
     print(f"{message}")
     print(f"{'*'*24} ARGS END {'*'*24}\n")
+
+
+def log_config(config: dict) -> None:
+    """Logs configuration to the console."""
+    print(f"{'*'*23} CONFIG BEGIN {'*'*23}")
+    message = ""
+    for k, v in config.items():
+        if isinstance(v, str):
+            message += f"{k} = '{v}'\n"
+        else:
+            message += f"{k} = {v}\n"
+    print(f"{message}")
+    print(f"{'*'*24} CONFIG END {'*'*24}\n")
