@@ -54,7 +54,6 @@ from torchrl.envs import (
     ObservationNorm,
     DoubleToFloat,
 )
-from torchrl.envs.libs.vmas import VmasEnv
 from torchrl.envs.utils import check_env_specs
 
 # Multi-agent network
@@ -65,6 +64,7 @@ from torchrl.objectives import ClipPPOLoss, ValueEstimators
 
 # Utils
 torch.manual_seed(0)
+from torchrl.record.loggers import TensorboardLogger, WandbLogger, Logger
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
@@ -87,7 +87,7 @@ class TrainConfig:
     eval_seed: int = 111  # seed of the evaluation
     save_interval: int = 100  # the interval to save the model
     start_step: int = 0  # the starting step of the experiment
-
+    track_wandb: bool = True
     use_compile: bool = False  # whether to use torch.dynamo compiler
 
     # Environment specific arguments
@@ -254,7 +254,23 @@ def main(config: TrainConfig):
     # (num_envs, env_batch, n_rollout_steps) = (num_envs, 1, n_rollout_steps)
 
     try:
-        wandb_init(config)
+        if config.track_wandb:
+            # wandb_init(config)
+            logger = WandbLogger(
+                exp_name=f"{config.name}",
+                offline=config.wandb_mode == False,
+                log_dir=config.checkpoint_dir,
+                project=config.project,
+                group=config.group,
+            )
+        else:
+            logger = TensorboardLogger(
+                exp_name=f"{config.group}_{config.name}",
+                log_dir=config.checkpoint_dir,
+            )
+        saved_config = config.__dict__.copy()
+        saved_config["device"] = str(config.device)
+        logger.log_hparams(saved_config)
 
         if envs.is_closed:
             envs.start()
@@ -381,6 +397,7 @@ def main(config: TrainConfig):
                 loss_module,
                 optim,
                 replay_buffer,
+                logger,
             )
         else:
             # Evaluation
@@ -434,6 +451,7 @@ def train(
     loss_module: ClipPPOLoss,
     optim: torch.optim.Optimizer,
     replay_buffer: ReplayBuffer,
+    logger: Logger,
 ):
     pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
     GAE = loss_module.value_estimator
@@ -502,7 +520,9 @@ def train(
             "train/loss_critic": loss_vals["loss_critic"].item(),
             "train/loss_entropy": loss_vals["loss_entropy"].item(),
         }
-        wandb.log({**logs}, step=idx * config.frames_per_batch * config.num_envs)
+        # wandb.log({**logs}, step=idx * config.frames_per_batch * config.num_envs)
+        for key, value in logs.items():
+            logger.log_scalar(key, value, step=idx * config.frames_per_batch * config.num_envs)
         torch.save(
             {
                 "policy": policy.state_dict(),
