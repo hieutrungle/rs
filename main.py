@@ -98,8 +98,8 @@ class TrainConfig:
     eval_ep_len: int = 70  # the maximum length of an episode
 
     # Sampling
-    frames_per_batch: int = 601  # Number of team frames collected per training iteration
-    n_iters: int = 300  # Number of sampling and training iterations
+    frames_per_batch: int = 200  # Number of team frames collected per training iteration
+    n_iters: int = 500  # Number of sampling and training iterations
 
     # Training
     num_epochs: int = 40  # Number of optimization steps per training iteration
@@ -338,7 +338,7 @@ def main(config: TrainConfig):
             critic_network=critic,
             loss_critic_type="l2",
             normalize_advantage=True,
-            normalize_advantage_exclude_dims=(0, 3),
+            normalize_advantage_exclude_dims=1,
             clip_epsilon=config.clip_epsilon,
             entropy_bonus=config.entropy_eps > 0,
             entropy_coef=config.entropy_eps,
