@@ -338,7 +338,7 @@ def main(config: TrainConfig):
             critic_network=critic,
             loss_critic_type="l2",
             normalize_advantage=True,
-            normalize_advantage_exclude_dims=1,
+            normalize_advantage_exclude_dims=(1,),
             clip_epsilon=config.clip_epsilon,
             entropy_bonus=config.entropy_eps > 0,
             entropy_coef=config.entropy_eps,
@@ -460,6 +460,8 @@ def train(
             .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
         )
 
+        print(f"td: {tensordict_data}\n")
+
         with torch.no_grad():
             # Compute GAE and add it to the data
             GAE(
@@ -467,6 +469,8 @@ def train(
                 params=loss_module.critic_network_params,
                 target_params=loss_module.target_critic_network_params,
             )
+
+        print(f"td: {tensordict_data}\n")
 
         data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
         replay_buffer.extend(data_view)
