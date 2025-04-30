@@ -492,8 +492,12 @@ def train(
         episode_reward_mean = (
             tensordict_data.get(("next", "agents", "episode_reward"))[done].mean().item()
         )
+        done = tensordict_data.get(("next", "done"))
+        episode_max_step = tensordict_data.get(("next", "step_count"))[done]
+        episode_max_step = episode_max_step.to(torch.float).mean().item()
         episode_reward_mean_list.append(episode_reward_mean)
         logs = {
+            "episode_max_step": episode_max_step,
             "episode_reward_mean": episode_reward_mean,
             "loss_objective": loss_vals["loss_objective"].item(),
             "loss_critic": loss_vals["loss_critic"].item(),
