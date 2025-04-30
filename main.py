@@ -254,24 +254,6 @@ def main(config: TrainConfig):
     # (num_envs, env_batch, n_rollout_steps) = (num_envs, 1, n_rollout_steps)
 
     try:
-        if config.track_wandb:
-            # wandb_init(config)
-            logger = WandbLogger(
-                exp_name=f"{config.name}",
-                offline=config.wandb_mode == False,
-                log_dir=config.checkpoint_dir,
-                project=config.project,
-                group=config.group,
-            )
-        else:
-            logger = TensorboardLogger(
-                exp_name=f"{config.group}_{config.name}",
-                log_dir=config.checkpoint_dir,
-            )
-        saved_config = config.__dict__.copy()
-        saved_config["device"] = str(config.device)
-        logger.log_hparams(saved_config)
-
         if envs.is_closed:
             envs.start()
         n_agents = list(envs.n_agents)[0]
@@ -386,7 +368,6 @@ def main(config: TrainConfig):
             optim.load_state_dict(checkpoint["optimizer"])
 
         if config.command == "train":
-            # Training
             print("Training...")
             train(
                 envs,
@@ -397,17 +378,9 @@ def main(config: TrainConfig):
                 loss_module,
                 optim,
                 replay_buffer,
-                logger,
             )
         else:
-            # Evaluation
             print("Evaluation...")
-            # if config.load_eval_model != "-1":
-            #     checkpoint = torch.load(config.load_eval_model)
-            #     policy.load_state_dict(checkpoint["policy"])
-            #     critic.load_state_dict(checkpoint["critic"])
-            #     loss_module.load_state_dict(checkpoint["loss_module"])
-            #     optim.load_state_dict(checkpoint["optimizer"])
             eval(envs, config, policy)
             print("Evaluation done")
 
@@ -420,11 +393,6 @@ def main(config: TrainConfig):
         torch.cuda.empty_cache()
         if not envs.is_closed:
             envs.close()
-
-    # print("Total step:", total_step)
-    # print(f"Time taken for rollout: {end_time - start_time:.4f} s")
-    # print(f"Average time per step: {(end_time - start_time) / total_step:.4f} s")
-    # print(f"Average time per step in ms: {(end_time - start_time) / total_step * 1000:.4f} ms")
 
 
 def transform_envs(envs, config: TrainConfig):
@@ -451,8 +419,19 @@ def train(
     loss_module: ClipPPOLoss,
     optim: torch.optim.Optimizer,
     replay_buffer: ReplayBuffer,
-    logger: Logger,
 ):
+
+    if config.track_wandb:
+        wandb_init(config)
+    else:
+        logger = TensorboardLogger(
+            exp_name=f"{config.group}_{config.name}",
+            log_dir=config.checkpoint_dir,
+        )
+        saved_config = config.__dict__.copy()
+        saved_config["device"] = str(config.device)
+        logger.log_hparams(saved_config)
+
     pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
     GAE = loss_module.value_estimator
     episode_reward_mean_list = []
@@ -515,14 +494,17 @@ def train(
         )
         episode_reward_mean_list.append(episode_reward_mean)
         logs = {
-            "train/episode_reward_mean": episode_reward_mean,
-            "train/loss_objective": loss_vals["loss_objective"].item(),
-            "train/loss_critic": loss_vals["loss_critic"].item(),
-            "train/loss_entropy": loss_vals["loss_entropy"].item(),
+            "episode_reward_mean": episode_reward_mean,
+            "loss_objective": loss_vals["loss_objective"].item(),
+            "loss_critic": loss_vals["loss_critic"].item(),
+            "loss_entropy": loss_vals["loss_entropy"].item(),
         }
-        # wandb.log({**logs}, step=idx * config.frames_per_batch * config.num_envs)
-        for key, value in logs.items():
-            logger.log_scalar(key, value, step=idx * config.frames_per_batch * config.num_envs)
+        step = idx * config.frames_per_batch * config.num_envs
+        if config.track_wandb:
+            wandb.log({**logs}, step=step)
+        else:
+            for key, value in logs.items():
+                logger.log_scalar(key, value, step=step)
         torch.save(
             {
                 "policy": policy.state_dict(),
@@ -543,206 +525,9 @@ def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
             policy=policy,
             # callback=lambda env, _: env.render(),
             auto_cast_to_device=True,
-            break_when_any_done=False,
-            break_when_all_done=True,
+            # break_when_any_done=False,
+            # break_when_all_done=True,
         )
-
-
-@pyrallis.wrap()
-def test_env(config: TrainConfig):
-    torch.compiler.reset()
-
-    # Force torchrl to use forkserver for multiprocessing
-    torch.multiprocessing.set_start_method("forkserver", force=True)
-
-    # Load Sionna configuration
-    # sionna_config = utils.load_config(config.sionna_config_file)
-    pytorch_utils.init_seed(config.seed)
-    env = make_env(config, 0)()
-    env = TransformedEnv(
-        env, RewardSum(in_keys=[env.reward_key], out_keys=[("agents", "episode_reward")])
-    )
-    env.append_transform(StepCounter(max_steps=config.ep_len))
-    # print(f"action_spec: {env.action_spec}\n")
-    # print("observation_spec:", env.observation_spec)
-    # print("state_spec:", env.state_spec)
-    # print("reward_spec:", env.reward_spec)
-    # print("done_spec:", env.full_done_spec)
-    # print("action_keys:", env.action_keys)
-    # print("reward_keys:", env.reward_keys)
-    # print("done_keys:", env.done_keys)
-    # print("observation_spec:", env.observation_keys)
-    try:
-        check_env_specs(env)
-        # n_rollout_steps = 5
-        # rollout = env.rollout(n_rollout_steps)
-        # # rollout has batch_size of (num_vmas_envs, n_rollout_steps)
-
-        # print("rollout of three steps:", rollout)
-        # print("Shape of the rollout TensorDict:", rollout.batch_size)
-        shared_parameters_policy = True
-        policy_net = torch.nn.Sequential(
-            MultiAgentMLP(
-                # n_obs_per_agent
-                n_agent_inputs=env.observation_spec["agents", "observation"].shape[-1],
-                # 2 * n_actions_per_agents
-                n_agent_outputs=2 * env.action_spec.shape[-1],  # 2 * n_actions_per_agents
-                n_agents=env.n_agents,
-                #  the policies are decentralised (ie each agent will act from its observation)
-                centralised=False,
-                share_params=shared_parameters_policy,
-                device=config.device,
-                depth=2,
-                num_cells=256,
-                activation_class=torch.nn.Tanh,
-            ),
-            #  this will just separate the last dimension into two outputs: a loc and a non-negative scale
-            NormalParamExtractor(),
-        )
-
-        policy_module = TensorDictModule(
-            policy_net,
-            in_keys=[("agents", "observation")],
-            out_keys=[("agents", "loc"), ("agents", "scale")],
-        )
-
-        policy = ProbabilisticActor(
-            module=policy_module,
-            spec=env.action_spec_unbatched,
-            in_keys=[("agents", "loc"), ("agents", "scale")],
-            out_keys=[env.action_key],
-            distribution_class=TanhNormal,
-            distribution_kwargs={
-                "low": env.full_action_spec_unbatched[env.action_key].space.low,
-                "high": env.full_action_spec_unbatched[env.action_key].space.high,
-            },
-            return_log_prob=True,
-        )  # we'll need the log-prob for the PPO loss
-
-        share_parameters_critic = True
-        mappo = True
-
-        critic_net = MultiAgentMLP(
-            n_agent_inputs=env.observation_spec["agents", "observation"].shape[-1],
-            n_agent_outputs=1,  # 1 value per agent
-            n_agents=env.n_agents,
-            centralised=mappo,
-            share_params=share_parameters_critic,
-            device=config.device,
-            depth=2,
-            num_cells=256,
-            activation_class=torch.nn.Tanh,
-        )
-
-        critic = TensorDictModule(
-            module=critic_net,
-            in_keys=[("agents", "observation")],
-            out_keys=[("agents", "state_value")],
-        )
-
-        collector = SyncDataCollector(
-            env,
-            policy,
-            device=config.device,
-            storing_device=config.device,
-            frames_per_batch=config.frames_per_batch,
-            total_frames=config.total_frames,
-        )
-
-        replay_buffer = TensorDictReplayBuffer(
-            storage=LazyTensorStorage(config.frames_per_batch, device=config.device),
-            sampler=SamplerWithoutReplacement(),
-            batch_size=config.minibatch_size,
-        )
-
-        loss_module = ClipPPOLoss(
-            actor_network=policy,
-            critic_network=critic,
-            clip_epsilon=config.clip_epsilon,
-            entropy_coef=config.entropy_eps,
-            # Important to avoid normalizing across the agent dimension
-            normalize_advantage=False,
-        )
-        loss_module.set_keys(  # We have to tell the loss where to find the keys
-            reward=env.reward_key,
-            action=env.action_key,
-            value=("agents", "state_value"),
-            # These last 2 keys will be expanded to match the reward shape
-            done=("agents", "done"),
-            terminated=("agents", "terminated"),
-        )
-
-        # GAE
-        loss_module.make_value_estimator(
-            ValueEstimators.GAE, gamma=config.gamma, lmbda=config.lmbda
-        )
-        GAE = loss_module.value_estimator
-
-        optim = torch.optim.Adam(loss_module.parameters(), lr=config.lr)
-        pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
-
-        episode_reward_mean_list = []
-        for idx, tensordict_data in enumerate(collector):
-
-            # We need to expand the done and terminated to match the reward shape (this is expected by the value estimator)
-            tensordict_data.set(
-                ("next", "agents", "done"),
-                tensordict_data.get(("next", "done"))
-                .unsqueeze(-1)
-                .expand(tensordict_data.get_item_shape(("next", env.reward_key))),
-            )
-            tensordict_data.set(
-                ("next", "agents", "terminated"),
-                tensordict_data.get(("next", "terminated"))
-                .unsqueeze(-1)
-                .expand(tensordict_data.get_item_shape(("next", env.reward_key))),
-            )
-
-            with torch.no_grad():
-                # Compute GAE and add it to the data
-                GAE(
-                    tensordict_data,
-                    params=loss_module.critic_network_params,
-                    target_params=loss_module.target_critic_network_params,
-                )
-
-            data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
-            replay_buffer.extend(data_view)
-
-            for _ in range(config.num_epochs):
-                for _ in range(config.frames_per_batch // config.minibatch_size):
-                    subdata = replay_buffer.sample()
-                    loss_vals = loss_module(subdata)
-
-                    loss_value = (
-                        loss_vals["loss_objective"]
-                        + loss_vals["loss_critic"]
-                        + loss_vals["loss_entropy"]
-                    )
-
-                    loss_value.backward()
-
-                    torch.nn.utils.clip_grad_norm_(loss_module.parameters(), config.max_grad_norm)
-                    optim.step()
-                    optim.zero_grad()
-
-            collector.update_policy_weights_()
-
-            # Logging
-            done = tensordict_data.get(("next", "agents", "done"))
-            episode_reward_mean = (
-                tensordict_data.get(("next", "agents", "episode_reward"))[done].mean().item()
-            )
-            episode_reward_mean_list.append(episode_reward_mean)
-            pbar.set_description(f"episode_reward_mean = {episode_reward_mean}", refresh=False)
-            pbar.update()
-
-    except Exception as e:
-        print("Environment specs are not correct")
-        print(e)
-        traceback.print_exc()
-    finally:
-        env.close()
 
 
 if __name__ == "__main__":
