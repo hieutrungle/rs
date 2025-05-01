@@ -32,8 +32,6 @@ import rs
 from rs.utils import pytorch_utils, utils
 from rs.envs import Classroom
 
-# Torch
-
 # Tensordict modules
 from tensordict.nn import set_composite_lp_aggregate, TensorDictModule
 from tensordict.nn.distributions import NormalParamExtractor
@@ -249,9 +247,6 @@ def main(config: TrainConfig):
 
     if loc is None and scale is None:
         envs.transform[0].init_stats(num_iter=config.ep_len * 3, reduce_dim=(0, 1, 2), cat_dim=1)
-
-    # batch_size rollout:
-    # (num_envs, env_batch, n_rollout_steps) = (num_envs, 1, n_rollout_steps)
 
     try:
         if envs.is_closed:

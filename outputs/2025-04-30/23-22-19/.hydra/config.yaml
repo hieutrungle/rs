@@ -1,0 +1,43 @@
+source_dir: run_qmix.sh
+checkpoint_dir: /home/hieule/research/rs/local_assets/models
+seed: 10
+eval_seed: 111
+verbose: false
+device: '-1'
+eval:
+  load_eval_model: '-1'
+train:
+  replay_buffer_dir: '-1'
+  load_model: '-1'
+  load_replay_buffer: '-1'
+  save_interval: 100
+  start_step: 0
+  use_compile: false
+  frames_per_batch: 200
+  n_iters: 500
+  num_epochs: 40
+  minibatch_size: 200
+  total_frames: -1
+  lr: 0.0002
+  max_grad_norm: 1.0
+env:
+  name: wireless-sigmap-v0
+  type: wireless-sigmap-v0
+  num_envs: 1
+  config:
+    sionna_config_file: /home/hieule/research/rs/configs/sionna_shared_ap.yaml
+    ep_len: 70
+    eval_ep_len: 70
+loss:
+  type: PPO
+  ppo:
+    clip_epsilon: 0.2
+    gamma: 0.985
+    lmbda: 0.9
+    entropy_eps: 0.0001
+log:
+  log_wandb: true
+  wandb_mode: offline
+  wandb_project: RS
+  wandb_group: PPO_raw
+  wandb_name: FirstRun

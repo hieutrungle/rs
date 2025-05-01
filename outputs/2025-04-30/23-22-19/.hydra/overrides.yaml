@@ -1,0 +1,5 @@
+- checkpoint_dir=/home/hieule/research/rs/local_assets/models
+- source_dir=run_qmix.sh
+- env.config.sionna_config_file=/home/hieule/research/rs/configs/sionna_shared_ap.yaml
+- env.num_envs=1
+- log.wandb_mode=offline

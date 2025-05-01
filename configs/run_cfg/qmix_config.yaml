@@ -1,0 +1,50 @@
+# General arguments
+
+source_dir: "-1" # the path to the source code
+checkpoint_dir: "-1" # the path to save the model
+seed: 10 # seed of the experiment
+eval_seed: 111 # seed of the evaluation
+verbose: false # whether to log to console
+device: "-1" # device to use for training, "cuda" or "cpu" or -1 for auto
+load_model: "-1" # Model load file name for resume training, "-1" doesn't load
+command: "train" # command to run, "train" or "eval"
+
+train:
+    replay_buffer_dir: "-1" # the path to save the replay buffer
+    load_replay_buffer: "-1" # the path to load the replay buffer
+    save_interval: 100 # the interval to save the model
+    start_step: 0 # the starting step of the experiment
+    use_compile: false # whether to use torch.dynamo compiler
+    frames_per_batch: 200 # Number of team frames collected per training iteration
+    n_iters: 500 # Number of sampling and training iterations
+
+    num_epochs: 40 # Number of optimization steps per training iteration
+    minibatch_size: 200 # Size of the mini-batches in each optimization step
+    total_frames: -1 # Totalframes = frames_per_batch * n_iters
+    lr: 0.0002 # Learning rate (2e-4)
+    max_grad_norm: 1.0 # Maximum norm for the gradients
+
+# Environment specific arguments
+env:
+    name: "wireless-sigmap-v0"
+    type: "wireless-sigmap-v0"
+    num_envs: 3
+    sionna_config_file: "-1" # Sionna config file. REQUIRED for Sionna environments
+    ep_len: 70
+    eval_ep_len: 70
+
+# Loss
+loss:
+    type: "PPO" # PPO loss
+    clip_epsilon: 0.2 # clip value for PPO loss
+    gamma: 0.985 # discount factor
+    lmbda: 0.9 # lambda for generalised advantage estimation
+    entropy_eps: 0.0001 # coefficient of the entropy term in the PPO loss (1e-4)
+
+# Wandb logging
+log:
+    log_wandb: true # whether to log to wandb
+    mode: "online" # wandb mode
+    project: "RS" # wandb project name
+    group: "PPO_raw" # wandb group name
+    name: "FirstRun" # wandb run name

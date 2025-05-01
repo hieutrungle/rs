@@ -38,6 +38,14 @@ echo Blender directory: $BLENDER_DIR
 echo Coverage map directory: $SOURCE_DIR
 echo -e Assets directory: $ASSETS_DIR '\n'
 
-python ./main_ddpg.py --command "train" --checkpoint_dir ${ASSETS_DIR}/models --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir ${ASSETS_DIR}/replay_buffer --source_dir ${SCRIPT_DIR} --num_envs 5
-#  --verbose True --ep_len 3 --frames_per_batch 5 --n_iters 2 --num_epochs 2 --minibatch_size 2 --wandb "offline" --track_wandb False
+python ./main_ddpg.py \
+  checkpoint_dir=${ASSETS_DIR}/models \
+  source_dir=${SCRIPT_DIR} \
+  env.sionna_config_file="/home/hieule/research/rs/configs/sionna_shared_ap.yaml" \
+  env.num_envs=2 env.ep_len=3 \
+  train.frames_per_batch=5 train.n_iters=2 train.num_epochs=2 train.minibatch_size=2 \
+  log.mode="offline" 
+# --command "train" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --source_dir "/home/hieule/research/rs/" --num_envs 1
+# --ep_len 3 --frames_per_batch 5 --n_iters 2 --num_epochs 2 --minibatch_size 2 --wandb "offline" 
+# --load_model "/home/hieule/research/rs/local_assets_2/models/checkpoint_1.pt"
 # python ./main.py --command "eval" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --wandb "offline" --num_envs 1

@@ -5,7 +5,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragmentation
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
-
+import hydra
+from omegaconf import DictConfig, OmegaConf
 from collections import deque
 from dataclasses import dataclass
 import traceback
@@ -71,95 +72,27 @@ from tqdm import tqdm
 set_composite_lp_aggregate(False).set()
 
 
-@dataclass
-class TrainConfig:
-
-    # General arguments
-    command: str = "train"  # the command to run
-    load_model: str = "-1"  # Model load file name for resume training, "-1" doesn't load
-    load_eval_model: str = "-1"  # Model load file name for evaluation, "-1" doesn't load
-    checkpoint_dir: str = "-1"  # the path to save the model
-    replay_buffer_dir: str = "-1"  # the path to save the replay buffer
-    load_replay_buffer: str = "-1"  # the path to load the replay buffer
-    source_dir: str = "-1"  # the path to the source code
-    verbose: bool = False  # whether to log to console
-    seed: int = 10  # seed of the experiment
-    eval_seed: int = 111  # seed of the evaluation
-    save_interval: int = 100  # the interval to save the model
-    start_step: int = 0  # the starting step of the experiment
-    track_wandb: bool = True
-    use_compile: bool = False  # whether to use torch.dynamo compiler
-
-    # Environment specific arguments
-    env_id: str = "wireless-sigmap-v0"  # the environment id of the task
-    sionna_config_file: str = "-1"  # Sionna config file
-    num_envs: int = 3  # the number of parallel environments
-    ep_len: int = 70  # the maximum length of an episode
-    eval_ep_len: int = 70  # the maximum length of an episode
-
-    # Sampling
-    frames_per_batch: int = 200  # Number of team frames collected per training iteration
-    n_iters: int = 500  # Number of sampling and training iterations
-
-    # Training
-    num_epochs: int = 40  # Number of optimization steps per training iteration
-    minibatch_size: int = 200  # Size of the mini-batches in each optimization step
-    lr: float = 2e-4  # Learning rate
-    max_grad_norm: float = 1.0  # Maximum norm for the gradients
-
-    # PPO
-    clip_epsilon: float = 0.2  # clip value for PPO loss
-    gamma: float = 0.985  # discount factor
-    lmbda: float = 0.9  # lambda for generalised advantage estimation
-    entropy_eps: float = 1e-4  # coefficient of the entropy term in the PPO loss
-
-    # Wandb logging
-    wandb_mode: str = "online"  # wandb mode
-    project: str = "RS"  # wandb project name
-    group: str = "PPO_raw"  # wandb group name
-    name: str = "FirstRun"  # wandb run name
-
-    def __post_init__(self):
-        if self.source_dir == "-1":
-            raise ValueError("Source dir is required for training")
-        if self.checkpoint_dir == "-1":
-            raise ValueError("Checkpoints dir is required for training")
-        if self.sionna_config_file == "-1":
-            raise ValueError("Sionna config file is required for training")
-        if self.command.lower() == "train" and self.replay_buffer_dir == "-1":
-            raise ValueError("Replay buffer dir is required for training")
-        # if self.command.lower() == "eval" and self.load_eval_model == "-1":
-        #     raise ValueError("Load eval model is required for evaluation")
-
-        utils.mkdir_not_exists(self.checkpoint_dir)
-
-        self.total_frames: int = self.frames_per_batch * self.n_iters
-
-        device = pytorch_utils.init_gpu()
-        self.device = device
-
-
-def wandb_init(config: TrainConfig) -> None:
+def wandb_init(config: DictConfig) -> None:
     key_filename = os.path.join(config.source_dir, "tmp_wandb_api_key.txt")
     with open(key_filename, "r") as f:
         key_api = f.read().strip()
     wandb.login(relogin=True, key=key_api, host="https://api.wandb.ai")
     wandb.init(
-        config=config,
+        config=dict(config),
         dir=config.checkpoint_dir,
-        project=config.project,
-        group=config.group,
-        name=config.name,
-        mode=config.wandb_mode,
+        project=config.log.project,
+        group=config.log.group,
+        name=config.log.name,
+        mode=config.log.mode,
     )
 
 
-def make_env(config: TrainConfig, idx: int) -> Callable:
+def make_env(config: DictConfig, idx: int) -> Callable:
 
     def thunk() -> EnvBase:
         # Load Sionna configuration
 
-        sionna_config = utils.load_config(config.sionna_config_file)
+        sionna_config = utils.load_config(config.env.sionna_config_file)
         sionna_config["seed"] = config.seed + idx
         sionna_config["num_runs_before_restart"] = 10
         scene_name = f"{sionna_config['scene_name']}_{idx}"
@@ -195,15 +128,38 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
     return thunk
 
 
-@pyrallis.wrap()
-def main(config: TrainConfig):
+def __post_init(config: DictConfig) -> DictConfig:
+    if config.source_dir == "-1":
+        raise ValueError("Source dir is required")
+    if config.checkpoint_dir == "-1":
+        raise ValueError("Checkpoints dir is required")
+    if config.env.sionna_config_file == "-1":
+        raise ValueError("Sionna config file is required")
+    # if config.command.lower() == "train" and config.replay_buffer_dir == "-1":
+    #     raise ValueError("Replay buffer dir is required for training")
+    # if config.command.lower() == "eval" and config.load_eval_model == "-1":
+    #     raise ValueError("Load eval model is required for evaluation")
 
-    if config.command.lower() == "train":
+    utils.mkdir_not_exists(config.checkpoint_dir)
+
+    config.train.total_frames = config.train.frames_per_batch * config.train.n_iters
+
+    device = pytorch_utils.init_gpu()
+    config.device = str(device)
+    return config
+
+
+@hydra.main(version_base="1.1", config_path="configs/run_cfg", config_name="qmix_config")
+def main(config: DictConfig):
+
+    if config.command.lower() != "train":
         print(f"=" * 30 + "Training" + "=" * 30)
     else:
         print(f"=" * 30 + "Evaluation" + "=" * 30)
 
-    utils.log_config(config.__dict__)
+    config = __post_init(config)
+
+    print(OmegaConf.to_yaml(config))
 
     # Reset the torch compiler if needed
     torch.compiler.reset()
@@ -214,8 +170,8 @@ def main(config: TrainConfig):
     # check_env_specs(envs)
 
     envs = ParallelEnv(
-        config.num_envs,
-        [make_env(config, idx) for idx in range(config.num_envs)],
+        config.env.num_envs,
+        [make_env(config, idx) for idx in range(config.env.num_envs)],
         mp_start_method="forkserver",
         shared_memory=False,
     )
@@ -242,36 +198,20 @@ def main(config: TrainConfig):
                 standard_normal=True,
             ),
             DoubleToFloat(),
-            StepCounter(max_steps=config.ep_len),
+            StepCounter(max_steps=config.env.ep_len),
             RewardSum(in_keys=[envs.reward_key], out_keys=[("agents", "episode_reward")]),
         ),
     )
 
     if loc is None and scale is None:
-        envs.transform[0].init_stats(num_iter=config.ep_len * 3, reduce_dim=(0, 1, 2), cat_dim=1)
+        envs.transform[0].init_stats(
+            num_iter=config.env.ep_len * 3, reduce_dim=(0, 1, 2), cat_dim=1
+        )
 
     # batch_size rollout:
     # (num_envs, env_batch, n_rollout_steps) = (num_envs, 1, n_rollout_steps)
 
     try:
-        if config.track_wandb:
-            # wandb_init(config)
-            logger = WandbLogger(
-                exp_name=f"{config.name}",
-                offline=config.wandb_mode == False,
-                log_dir=config.checkpoint_dir,
-                project=config.project,
-                group=config.group,
-            )
-        else:
-            logger = TensorboardLogger(
-                exp_name=f"{config.group}_{config.name}",
-                log_dir=config.checkpoint_dir,
-            )
-        saved_config = config.__dict__.copy()
-        saved_config["device"] = str(config.device)
-        logger.log_hparams(saved_config)
-
         if envs.is_closed:
             envs.start()
         n_agents = list(envs.n_agents)[0]
@@ -337,16 +277,16 @@ def main(config: TrainConfig):
             policy,
             device=config.device,
             storing_device=config.device,
-            frames_per_batch=config.frames_per_batch * config.num_envs,
-            total_frames=config.total_frames * config.num_envs,
+            frames_per_batch=config.train.frames_per_batch * config.env.num_envs,
+            total_frames=config.train.total_frames * config.env.num_envs,
         )
 
         replay_buffer = TensorDictReplayBuffer(
             storage=LazyTensorStorage(
-                config.frames_per_batch * config.num_envs, device=config.device
+                config.train.frames_per_batch * config.env.num_envs, device=config.device
             ),
             sampler=SamplerWithoutReplacement(),
-            batch_size=config.minibatch_size,
+            batch_size=config.train.minibatch_size,
         )
 
         loss_module = ClipPPOLoss(
@@ -355,9 +295,9 @@ def main(config: TrainConfig):
             loss_critic_type="l2",
             normalize_advantage=True,
             normalize_advantage_exclude_dims=(1,),
-            clip_epsilon=config.clip_epsilon,
-            entropy_bonus=config.entropy_eps > 0,
-            entropy_coef=config.entropy_eps,
+            clip_epsilon=config.loss.clip_epsilon,
+            entropy_bonus=config.loss.entropy_eps > 0,
+            entropy_coef=config.loss.entropy_eps,
             # Important to avoid normalizing across the agent dimension
             # normalize_advantage=False,
         )
@@ -372,11 +312,11 @@ def main(config: TrainConfig):
 
         # GAE
         loss_module.make_value_estimator(
-            ValueEstimators.GAE, gamma=config.gamma, lmbda=config.lmbda
+            ValueEstimators.GAE, gamma=config.loss.gamma, lmbda=config.loss.lmbda
         )
 
         # optimizer
-        optim = torch.optim.Adam(loss_module.parameters(), lr=config.lr)
+        optim = torch.optim.Adam(loss_module.parameters(), lr=config.train.lr)
 
         if checkpoint:
             print(f"Loading checkpoint from: {config.load_model}")
@@ -386,7 +326,6 @@ def main(config: TrainConfig):
             optim.load_state_dict(checkpoint["optimizer"])
 
         if config.command == "train":
-            # Training
             print("Training...")
             train(
                 envs,
@@ -397,17 +336,9 @@ def main(config: TrainConfig):
                 loss_module,
                 optim,
                 replay_buffer,
-                logger,
             )
         else:
-            # Evaluation
             print("Evaluation...")
-            # if config.load_eval_model != "-1":
-            #     checkpoint = torch.load(config.load_eval_model)
-            #     policy.load_state_dict(checkpoint["policy"])
-            #     critic.load_state_dict(checkpoint["critic"])
-            #     loss_module.load_state_dict(checkpoint["loss_module"])
-            #     optim.load_state_dict(checkpoint["optimizer"])
             eval(envs, config, policy)
             print("Evaluation done")
 
@@ -421,39 +352,30 @@ def main(config: TrainConfig):
         if not envs.is_closed:
             envs.close()
 
-    # print("Total step:", total_step)
-    # print(f"Time taken for rollout: {end_time - start_time:.4f} s")
-    # print(f"Average time per step: {(end_time - start_time) / total_step:.4f} s")
-    # print(f"Average time per step in ms: {(end_time - start_time) / total_step * 1000:.4f} ms")
-
-
-def transform_envs(envs, config: TrainConfig):
-    envs = TransformedEnv(
-        envs,
-        Compose(
-            ObservationNorm(
-                in_keys=[("agents", "observation")], out_keys=[("agents", "observation")]
-            ),
-            DoubleToFloat(),
-            StepCounter(max_steps=config.ep_len),
-            RewardSum(in_keys=[envs.reward_key], out_keys=[("agents", "episode_reward")]),
-        ),
-    )
-    return envs
-
 
 def train(
     envs: ParallelEnv,
-    config: TrainConfig,
+    config: DictConfig,
     collector: SyncDataCollector,
     policy: TensorDictModule,
     critic: TensorDictModule,
     loss_module: ClipPPOLoss,
     optim: torch.optim.Optimizer,
     replay_buffer: ReplayBuffer,
-    logger: Logger,
 ):
-    pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
+
+    if config.log.log_wandb:
+        wandb_init(config)
+    else:
+        logger = TensorboardLogger(
+            exp_name=f"{config.log.group}_{config.log.name}",
+            log_dir=config.checkpoint_dir,
+        )
+        saved_config = config.__dict__.copy()
+        saved_config["device"] = str(config.device)
+        logger.log_hparams(saved_config)
+
+    pbar = tqdm(total=config.train.n_iters, desc="episode_reward_mean = 0.0")
     GAE = loss_module.value_estimator
     episode_reward_mean_list = []
     for idx, tensordict_data in enumerate(collector):
@@ -489,8 +411,8 @@ def train(
         data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
         replay_buffer.extend(data_view)
 
-        for _ in range(config.num_epochs):
-            for _ in range(config.frames_per_batch // config.minibatch_size):
+        for _ in range(config.train.num_epochs):
+            for _ in range(config.train.frames_per_batch // config.train.minibatch_size):
                 subdata = replay_buffer.sample()
                 loss_vals = loss_module(subdata)
 
@@ -502,7 +424,7 @@ def train(
 
                 loss_value.backward()
 
-                torch.nn.utils.clip_grad_norm_(loss_module.parameters(), config.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(loss_module.parameters(), config.train.max_grad_norm)
                 optim.step()
                 optim.zero_grad()
 
@@ -513,16 +435,23 @@ def train(
         episode_reward_mean = (
             tensordict_data.get(("next", "agents", "episode_reward"))[done].mean().item()
         )
+        done = tensordict_data.get(("next", "done"))
+        episode_max_step = tensordict_data.get(("next", "step_count"))[done]
+        episode_max_step = episode_max_step.to(torch.float).mean().item()
         episode_reward_mean_list.append(episode_reward_mean)
         logs = {
-            "train/episode_reward_mean": episode_reward_mean,
-            "train/loss_objective": loss_vals["loss_objective"].item(),
-            "train/loss_critic": loss_vals["loss_critic"].item(),
-            "train/loss_entropy": loss_vals["loss_entropy"].item(),
+            "episode_max_step": episode_max_step,
+            "episode_reward_mean": episode_reward_mean,
+            "loss_objective": loss_vals["loss_objective"].item(),
+            "loss_critic": loss_vals["loss_critic"].item(),
+            "loss_entropy": loss_vals["loss_entropy"].item(),
         }
-        # wandb.log({**logs}, step=idx * config.frames_per_batch * config.num_envs)
-        for key, value in logs.items():
-            logger.log_scalar(key, value, step=idx * config.frames_per_batch * config.num_envs)
+        step = idx * config.train.frames_per_batch * config.env.num_envs
+        if config.log.log_wandb:
+            wandb.log({**logs}, step=step)
+        else:
+            for key, value in logs.items():
+                logger.log_scalar(key, value, step=step)
         torch.save(
             {
                 "policy": policy.state_dict(),
@@ -536,213 +465,16 @@ def train(
         pbar.update()
 
 
-def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
+def eval(envs: ParallelEnv, config: DictConfig, policy: TensorDictModule):
     with torch.no_grad():
         envs.rollout(
-            max_steps=config.eval_ep_len,
+            max_steps=config.env.eval_ep_len,
             policy=policy,
             # callback=lambda env, _: env.render(),
             auto_cast_to_device=True,
-            break_when_any_done=False,
-            break_when_all_done=True,
+            # break_when_any_done=False,
+            # break_when_all_done=True,
         )
-
-
-@pyrallis.wrap()
-def test_env(config: TrainConfig):
-    torch.compiler.reset()
-
-    # Force torchrl to use forkserver for multiprocessing
-    torch.multiprocessing.set_start_method("forkserver", force=True)
-
-    # Load Sionna configuration
-    # sionna_config = utils.load_config(config.sionna_config_file)
-    pytorch_utils.init_seed(config.seed)
-    env = make_env(config, 0)()
-    env = TransformedEnv(
-        env, RewardSum(in_keys=[env.reward_key], out_keys=[("agents", "episode_reward")])
-    )
-    env.append_transform(StepCounter(max_steps=config.ep_len))
-    # print(f"action_spec: {env.action_spec}\n")
-    # print("observation_spec:", env.observation_spec)
-    # print("state_spec:", env.state_spec)
-    # print("reward_spec:", env.reward_spec)
-    # print("done_spec:", env.full_done_spec)
-    # print("action_keys:", env.action_keys)
-    # print("reward_keys:", env.reward_keys)
-    # print("done_keys:", env.done_keys)
-    # print("observation_spec:", env.observation_keys)
-    try:
-        check_env_specs(env)
-        # n_rollout_steps = 5
-        # rollout = env.rollout(n_rollout_steps)
-        # # rollout has batch_size of (num_vmas_envs, n_rollout_steps)
-
-        # print("rollout of three steps:", rollout)
-        # print("Shape of the rollout TensorDict:", rollout.batch_size)
-        shared_parameters_policy = True
-        policy_net = torch.nn.Sequential(
-            MultiAgentMLP(
-                # n_obs_per_agent
-                n_agent_inputs=env.observation_spec["agents", "observation"].shape[-1],
-                # 2 * n_actions_per_agents
-                n_agent_outputs=2 * env.action_spec.shape[-1],  # 2 * n_actions_per_agents
-                n_agents=env.n_agents,
-                #  the policies are decentralised (ie each agent will act from its observation)
-                centralised=False,
-                share_params=shared_parameters_policy,
-                device=config.device,
-                depth=2,
-                num_cells=256,
-                activation_class=torch.nn.Tanh,
-            ),
-            #  this will just separate the last dimension into two outputs: a loc and a non-negative scale
-            NormalParamExtractor(),
-        )
-
-        policy_module = TensorDictModule(
-            policy_net,
-            in_keys=[("agents", "observation")],
-            out_keys=[("agents", "loc"), ("agents", "scale")],
-        )
-
-        policy = ProbabilisticActor(
-            module=policy_module,
-            spec=env.action_spec_unbatched,
-            in_keys=[("agents", "loc"), ("agents", "scale")],
-            out_keys=[env.action_key],
-            distribution_class=TanhNormal,
-            distribution_kwargs={
-                "low": env.full_action_spec_unbatched[env.action_key].space.low,
-                "high": env.full_action_spec_unbatched[env.action_key].space.high,
-            },
-            return_log_prob=True,
-        )  # we'll need the log-prob for the PPO loss
-
-        share_parameters_critic = True
-        mappo = True
-
-        critic_net = MultiAgentMLP(
-            n_agent_inputs=env.observation_spec["agents", "observation"].shape[-1],
-            n_agent_outputs=1,  # 1 value per agent
-            n_agents=env.n_agents,
-            centralised=mappo,
-            share_params=share_parameters_critic,
-            device=config.device,
-            depth=2,
-            num_cells=256,
-            activation_class=torch.nn.Tanh,
-        )
-
-        critic = TensorDictModule(
-            module=critic_net,
-            in_keys=[("agents", "observation")],
-            out_keys=[("agents", "state_value")],
-        )
-
-        collector = SyncDataCollector(
-            env,
-            policy,
-            device=config.device,
-            storing_device=config.device,
-            frames_per_batch=config.frames_per_batch,
-            total_frames=config.total_frames,
-        )
-
-        replay_buffer = TensorDictReplayBuffer(
-            storage=LazyTensorStorage(config.frames_per_batch, device=config.device),
-            sampler=SamplerWithoutReplacement(),
-            batch_size=config.minibatch_size,
-        )
-
-        loss_module = ClipPPOLoss(
-            actor_network=policy,
-            critic_network=critic,
-            clip_epsilon=config.clip_epsilon,
-            entropy_coef=config.entropy_eps,
-            # Important to avoid normalizing across the agent dimension
-            normalize_advantage=False,
-        )
-        loss_module.set_keys(  # We have to tell the loss where to find the keys
-            reward=env.reward_key,
-            action=env.action_key,
-            value=("agents", "state_value"),
-            # These last 2 keys will be expanded to match the reward shape
-            done=("agents", "done"),
-            terminated=("agents", "terminated"),
-        )
-
-        # GAE
-        loss_module.make_value_estimator(
-            ValueEstimators.GAE, gamma=config.gamma, lmbda=config.lmbda
-        )
-        GAE = loss_module.value_estimator
-
-        optim = torch.optim.Adam(loss_module.parameters(), lr=config.lr)
-        pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
-
-        episode_reward_mean_list = []
-        for idx, tensordict_data in enumerate(collector):
-
-            # We need to expand the done and terminated to match the reward shape (this is expected by the value estimator)
-            tensordict_data.set(
-                ("next", "agents", "done"),
-                tensordict_data.get(("next", "done"))
-                .unsqueeze(-1)
-                .expand(tensordict_data.get_item_shape(("next", env.reward_key))),
-            )
-            tensordict_data.set(
-                ("next", "agents", "terminated"),
-                tensordict_data.get(("next", "terminated"))
-                .unsqueeze(-1)
-                .expand(tensordict_data.get_item_shape(("next", env.reward_key))),
-            )
-
-            with torch.no_grad():
-                # Compute GAE and add it to the data
-                GAE(
-                    tensordict_data,
-                    params=loss_module.critic_network_params,
-                    target_params=loss_module.target_critic_network_params,
-                )
-
-            data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
-            replay_buffer.extend(data_view)
-
-            for _ in range(config.num_epochs):
-                for _ in range(config.frames_per_batch // config.minibatch_size):
-                    subdata = replay_buffer.sample()
-                    loss_vals = loss_module(subdata)
-
-                    loss_value = (
-                        loss_vals["loss_objective"]
-                        + loss_vals["loss_critic"]
-                        + loss_vals["loss_entropy"]
-                    )
-
-                    loss_value.backward()
-
-                    torch.nn.utils.clip_grad_norm_(loss_module.parameters(), config.max_grad_norm)
-                    optim.step()
-                    optim.zero_grad()
-
-            collector.update_policy_weights_()
-
-            # Logging
-            done = tensordict_data.get(("next", "agents", "done"))
-            episode_reward_mean = (
-                tensordict_data.get(("next", "agents", "episode_reward"))[done].mean().item()
-            )
-            episode_reward_mean_list.append(episode_reward_mean)
-            pbar.set_description(f"episode_reward_mean = {episode_reward_mean}", refresh=False)
-            pbar.update()
-
-    except Exception as e:
-        print("Environment specs are not correct")
-        print(e)
-        traceback.print_exc()
-    finally:
-        env.close()
 
 
 if __name__ == "__main__":
