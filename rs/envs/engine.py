@@ -221,14 +221,14 @@ class SimulationWorker(mp.Process):
 # Main Process Controller
 # --------------------------
 class SimulationManager:
-    def __init__(self, sionna_config):
+    def __init__(self, sionna_config, task_counter: int = 0):
         self._setup_forkserver()
         self.sionna_config = sionna_config
         self.task_queue = mp.Queue()
         self.result_queue = mp.Queue()
         self.worker = SimulationWorker(self.sionna_config, self.task_queue, self.result_queue)
         self.worker.start()
-        self.task_counter = 0
+        self.task_counter = task_counter
 
     def _setup_forkserver(self):
         """Linux-specific forkserver configuration"""
@@ -283,8 +283,8 @@ class SimulationManager:
 
 
 class AutoRestartManager(SimulationManager):
-    def __init__(self, sionna_config: str, max_sims: int = 50):
-        super().__init__(sionna_config)
+    def __init__(self, sionna_config: str, max_sims: int = 50, task_counter: int = 0):
+        super().__init__(sionna_config, task_counter)
         self.sim_count = 0
         self.max_sims = max_sims
 

@@ -30,7 +30,7 @@ torch.multiprocessing.set_start_method("forkserver", force=True)
 
 import rs
 from rs.utils import pytorch_utils, utils
-from rs.envs import Classroom
+from rs.envs import Classroom, ClassroomEval
 
 # Tensordict modules
 from tensordict.nn import set_composite_lp_aggregate, TensorDictModule
@@ -87,6 +87,9 @@ class TrainConfig:
     start_step: int = 0  # the starting step of the experiment
     track_wandb: bool = True
     use_compile: bool = False  # whether to use torch.dynamo compiler
+    image_dir: str = (
+        "-1"  # the path to the image directory, if not provided, it will be set to source_dir
+    )
 
     # Environment specific arguments
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
@@ -170,8 +173,10 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         sionna_config["viz_scene_path"] = viz_scene_path
         sionna_config["compute_scene_path"] = compute_scene_path
 
-        image_dir = sionna_config["image_dir"]
-        image_dir = os.path.join(image_dir, scene_name)
+        # image_dir = sionna_config["image_dir"]
+        image_dir = os.path.join(config.image_dir, scene_name)
+        print(f"Image directory: {image_dir}")
+        # image_dir = config.image_dir
         sionna_config["image_dir"] = image_dir
 
         seed = config.seed + idx
@@ -181,12 +186,20 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         else:
             sionna_config["rendering"] = True
 
-        env = Classroom(
-            sionna_config,
-            seed=seed,
-            device=config.device,
-            num_runs_before_restart=20,
-        )
+        if config.command.lower() == "train":
+            env = Classroom(
+                sionna_config,
+                seed=seed,
+                device=config.device,
+                num_runs_before_restart=20,
+            )
+        elif config.command.lower() == "eval":
+            env = ClassroomEval(
+                sionna_config,
+                seed=config.eval_seed + idx,
+                device=config.device,
+                num_runs_before_restart=20,
+            )
 
         return env
 
@@ -519,14 +532,33 @@ def train(
 
 def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
     with torch.no_grad():
-        envs.rollout(
-            max_steps=config.eval_ep_len,
-            policy=policy,
-            # callback=lambda env, _: env.render(),
-            auto_cast_to_device=True,
-            # break_when_any_done=False,
-            # break_when_all_done=True,
+        collector = SyncDataCollector(
+            envs,
+            policy,
+            device=config.device,
+            storing_device=config.device,
+            frames_per_batch=config.ep_len * 10 * config.num_envs,
+            total_frames=config.ep_len * 10 * config.num_envs,
         )
+        for idx, tensordict_data in enumerate(collector):
+            rollouts = tensordict_data
+
+        # rollouts = envs.rollout(
+        #     max_steps=30,
+        #     # max_steps=config.ep_len * 3,
+        #     policy=policy,
+        #     # callback=lambda env, _: env.render(),
+        #     auto_cast_to_device=True,
+        #     auto_reset=True,
+        # )
+
+    # save the rollout
+    image_dir = config.image_dir
+    # get last name of the image directory
+    name = image_dir.split("/")[-1]
+    rollout_path = os.path.join(config.checkpoint_dir, f"env_rollout_{name}.pt")
+    torch.save(rollouts, rollout_path)
+    print(f"Rollout saved to {rollout_path}")
 
 
 if __name__ == "__main__":
