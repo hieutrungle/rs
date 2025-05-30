@@ -9,7 +9,6 @@ from torchrl.data import (
 from torchrl.envs import EnvBase
 from tensordict import TensorDict, TensorDictBase
 from tensordict.nn import TensorDictModule
-import torch
 from rs.envs.engine import AutoRestartManager, SignalCoverage
 import copy
 import numpy as np
@@ -17,6 +16,8 @@ from typing import Optional
 import time
 import queue
 import torch
+from shapely.geometry import Point, Polygon
+from shapely.ops import nearest_points
 
 """
 tensordict:
@@ -81,14 +82,6 @@ class ClassroomEval(EnvBase):
 
         # observations: focal points, rx_positions, rf_positions
         # actions: delta_focal_points
-        # rewards: reward
-        # done: done
-        self.rx_pos_ranges = [
-            [[-3.5, -0.2], [-1.0, 2.0]],
-            [[0.2, 3.5], [-1.0, 2.0]],
-            # [[-3.5, -0.2], [-5.5, -1.5]],
-            # [[0.2, 3.5], [-5.5, -1.5]],
-        ]
 
         # flatten all the tensors for observation
         rf_positions = torch.tensor(
@@ -110,45 +103,10 @@ class ClassroomEval(EnvBase):
         self.mgr = None
         self._make_spec()
 
-        self.ep_idx = 0
-
-    def _is_eligible(self, pt, obstacle_pos, rx_pos):
-        """
-        Check if the position is eligible for new rx_pos.
-        This function checks if the new rx_pos is not too close to obstacles and not too close to existing rx_pos.
-        """
-        # append new rx_pos that are not too close to obstacles
-        is_obs_overlaped = False
-        for pos in obstacle_pos:
-            if np.linalg.norm(np.array(pos[:2]) - np.array(pt)) < 0.7:
-                is_obs_overlaped = True
-                break
-
-        # make sure that distance between rx_pos is at least 1
-        if not is_obs_overlaped:
-            if not any(np.linalg.norm(np.array(pos[:2]) - np.array(pt)) < 1.5 for pos in rx_pos):
-                return True
-        return False
-
-    def _prepare_rx_positions(self, num_rxs) -> list:
-        # Pick ranges from rx_pos_ranges
-        rx_pos = []
-        is_3d = 3 if self.rx_position_shape[-1] == 3 else 2
-        # rx_pos_ranges = self.np_rng.choice(self.rx_pos_ranges, num_rxs, replace=False)
-        for rx_pos_range in self.rx_pos_ranges:
-            pt = None
-            while not pt:
-                x = self.np_rng.uniform(low=rx_pos_range[0][0], high=rx_pos_range[0][1])
-                y = self.np_rng.uniform(low=rx_pos_range[1][0], high=rx_pos_range[1][1])
-                tmp = [x, y]
-                if self._is_eligible(tmp, [], rx_pos):
-                    pt = tmp
-                    if is_3d == 3:
-                        rx_pos.append([x, y, 1.5])
-                    else:
-                        rx_pos.append([x, y])
-
-        return rx_pos
+        self.rx_polygon_coords = [
+            [(-4.0, 2.0), (-4.0, -5.5), (2.1, 2.1)],
+            [(4.0, 2.0), (4.0, -5.5), (-2.1, 2.1)],
+        ]
 
     def _get_ob(self, tensordict: TensorDictBase) -> TensorDictBase:
 
@@ -157,6 +115,30 @@ class ClassroomEval(EnvBase):
         focals = tensordict["agents", "focals"]
         observation = torch.cat([rx_positions, rf_positions, focals], dim=-1)
         tensordict["agents", "observation"] = observation
+
+    def _generate_random_point_in_polygon(self, polygon: Polygon) -> Point:
+        min_x, min_y, max_x, max_y = polygon.bounds
+        while True:
+            random_point = Point(
+                self.np_rng.uniform(min_x, max_x), self.np_rng.uniform(min_y, max_y)
+            )
+            if polygon.contains(random_point):
+                return random_point
+
+    def _prepare_rx_positions(self) -> list:
+        """
+        Prepare receiver positions based on the defined polygons.
+        This function generates random points within the polygons defined in self.rx_polygon_coords.
+        """
+        rx_pos = []
+        for polygon_coords in self.rx_polygon_coords:
+            polygon = Polygon(polygon_coords)
+            pt = self._generate_random_point_in_polygon(polygon)
+            if len(pt.coords[0]) == 2:
+                pt = Point(pt.x, pt.y, 1.5)
+            pt = [float(coord) for coord in pt.coords[0]]
+            rx_pos.append(pt)
+        return rx_pos
 
     def _reset(self, tensordict: TensorDict = None) -> TensorDict:
 
@@ -169,7 +151,7 @@ class ClassroomEval(EnvBase):
         if self.focals is None:
             # // TODO: Initialize/reposition receivers
             rx_positions = sionna_config["rx_positions"]
-            rx_positions = self._prepare_rx_positions(len(rx_positions))
+            rx_positions = self._prepare_rx_positions()
             print(f"initializing rx_positions: {rx_positions}")
         else:
             # move the rx_positions in a random direction using a normal distribution with mean 0 and std 0.25, also make sure that the new positions are within the bounds, self.rx_pos_ranges
@@ -177,16 +159,21 @@ class ClassroomEval(EnvBase):
             for idx, pos in enumerate(self.rx_positions.squeeze(0).tolist()):
                 x = pos[0] + self.np_rng.normal(0, 0.2)
                 y = pos[1] + self.np_rng.normal(0, 0.2)
+                # Ensure the new position is within the defined ranges
+                point = Point(x, y)
+                polygon = Polygon(self.rx_polygon_coords[idx])
+                if not polygon.contains(point):
+                    # If the new position is outside the polygon, find the nearest point on the polygon boundary
+                    point = nearest_points(point, polygon.boundary)[1]
+                    x, y = float(point.x), float(point.y)
+                # Append the new position
                 z = pos[2] if len(pos) == 3 else 1.5
-                x = float(np.clip(x, self.rx_pos_ranges[idx][0][0], self.rx_pos_ranges[idx][0][1]))
-                y = float(np.clip(y, self.rx_pos_ranges[idx][1][0], self.rx_pos_ranges[idx][1][1]))
                 rx_positions.append([x, y, z])
             print(f"repositioning rx_positions: {rx_positions}")
         sionna_config["rx_positions"] = rx_positions
         rx_positions = torch.tensor(rx_positions, dtype=torch.float32, device=self.device)
         rx_positions = rx_positions.unsqueeze(0)
         self.rx_positions = rx_positions
-        # print(f"self.rx_positions: {self.rx_positions}")
 
         # Initialize the environment using the Sionna configuration
         if self.focals is None:
@@ -222,8 +209,6 @@ class ClassroomEval(EnvBase):
         }
         out = TensorDict(out, device=self.device, batch_size=1)
         self._get_ob(out)
-
-        self.ep_idx += 1
 
         return out
 
@@ -424,7 +409,6 @@ class ClassroomEval(EnvBase):
         if self.mgr is not None:
             self.mgr.shutdown()
             self.mgr = None
-        print(f"task_counter: {task_counter}")
         self.mgr = AutoRestartManager(sionna_config, self.num_runs_before_restart, task_counter)
 
     def close(self):
