@@ -30,7 +30,7 @@ torch.multiprocessing.set_start_method("forkserver", force=True)
 
 import rs
 from rs.utils import pytorch_utils, utils
-from rs.envs import Classroom, ClassroomEval
+from rs.envs import Classroom, ClassroomEval, TwoAgentDataCenter
 
 # Tensordict modules
 from tensordict.nn import set_composite_lp_aggregate, TensorDictModule
@@ -187,7 +187,13 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
             sionna_config["rendering"] = True
 
         if config.command.lower() == "train":
-            env = Classroom(
+            if config.env_id.lower() == "classroom":
+                env_cls = Classroom
+            elif config.env_id.lower() == "data_center":
+                env_cls = TwoAgentDataCenter
+            else:
+                raise ValueError(f"Unknown environment id: {config.env_id}")
+            env = env_cls(
                 sionna_config,
                 seed=seed,
                 device=config.device,
