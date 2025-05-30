@@ -95,8 +95,8 @@ class TrainConfig:
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
     sionna_config_file: str = "-1"  # Sionna config file
     num_envs: int = 3  # the number of parallel environments
-    ep_len: int = 70  # the maximum length of an episode
-    eval_ep_len: int = 70  # the maximum length of an episode
+    ep_len: int = 50  # the maximum length of an episode
+    eval_ep_len: int = 50  # the maximum length of an episode
 
     # Sampling
     frames_per_batch: int = 200  # Number of team frames collected per training iteration
@@ -134,6 +134,7 @@ class TrainConfig:
 
         utils.mkdir_not_exists(self.checkpoint_dir)
 
+        self.frames_per_batch = self.frames_per_batch * self.num_envs
         self.total_frames: int = self.frames_per_batch * self.n_iters
 
         device = pytorch_utils.init_gpu()
@@ -175,7 +176,6 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
 
         # image_dir = sionna_config["image_dir"]
         image_dir = os.path.join(config.image_dir, scene_name)
-        print(f"Image directory: {image_dir}")
         # image_dir = config.image_dir
         sionna_config["image_dir"] = image_dir
 
@@ -327,14 +327,12 @@ def main(config: TrainConfig):
             policy,
             device=config.device,
             storing_device=config.device,
-            frames_per_batch=config.frames_per_batch * config.num_envs,
-            total_frames=config.total_frames * config.num_envs,
+            frames_per_batch=config.frames_per_batch,
+            total_frames=config.total_frames,
         )
 
         replay_buffer = TensorDictReplayBuffer(
-            storage=LazyTensorStorage(
-                config.frames_per_batch * config.num_envs, device=config.device
-            ),
+            storage=LazyTensorStorage(config.frames_per_batch, device=config.device),
             sampler=SamplerWithoutReplacement(),
             batch_size=config.minibatch_size,
         )
@@ -511,7 +509,7 @@ def train(
             "loss_critic": loss_vals["loss_critic"].item(),
             "loss_entropy": loss_vals["loss_entropy"].item(),
         }
-        step = idx * config.frames_per_batch * config.num_envs
+        step = idx * config.frames_per_batch
         if config.track_wandb:
             wandb.log({**logs}, step=step)
         else:
