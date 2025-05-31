@@ -200,7 +200,13 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 num_runs_before_restart=20,
             )
         elif config.command.lower() == "eval":
-            env = ClassroomEval(
+            if config.env_id.lower() == "classroom":
+                env_cls = ClassroomEval
+            elif config.env_id.lower() == "data_center":
+                env_cls = TwoAgentDataCenter
+            else:
+                raise ValueError(f"Unknown environment id: {config.env_id}")
+            env = env_cls(
                 sionna_config,
                 seed=config.eval_seed + idx,
                 device=config.device,

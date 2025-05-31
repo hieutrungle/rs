@@ -208,8 +208,8 @@ class SimulationWorker(mp.Process):
         blender_cmd.extend(arg_cmd)
 
         # 4) run blender app
-        bl_output_txt = os.path.join(self.tmp_dir, "bl_outputs.txt")
-        subprocess.run(blender_cmd, check=True, stdout=open(bl_output_txt, "w"))
+        # bl_output_txt = os.path.join(self.tmp_dir, "bl_outputs.txt")
+        subprocess.run(blender_cmd, check=True, stdout=subprocess.DEVNULL)
         # subprocess.run(blender_cmd, check=True)
 
     def _clear_memory(self):

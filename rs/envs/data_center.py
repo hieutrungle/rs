@@ -74,11 +74,11 @@ class TwoAgentDataCenter(EnvBase):
         self.num_rf = len(sionna_config["rf_positions"])
         self.n_agents = self.num_rf
         self.init_focals = torch.tensor(
-            [[0.0, 5.5, 2.0] for _ in range(self.num_rf)], dtype=torch.float32, device=device
+            [[0.0, 0.0, 2.0] for _ in range(self.num_rf)], dtype=torch.float32, device=device
         )
         self.init_focals = self.init_focals.unsqueeze(0)
-        self.focal_low = torch.tensor([[[-10.0, -10.0, -4], [-6.5, -10.0, -4.0]]], device=device)
-        self.focal_high = torch.tensor([[[6.5, 10.0, 5.0], [10.0, 10.0, 5.0]]], device=device)
+        self.focal_low = torch.tensor([[[-5.0, -7.0, -4], [-8.0, -7.0, -4.0]]], device=device)
+        self.focal_high = torch.tensor([[[8.0, 7.0, 5.0], [5.0, 7.0, 5.0]]], device=device)
 
         # observations: focal points, rx_positions, rf_positions
         # actions: delta_focal_points
@@ -104,16 +104,6 @@ class TwoAgentDataCenter(EnvBase):
         self._make_spec()
 
         self.rx_ranges_1 = [
-            [(-2.8, -2.55), (4.0, 4.5)],
-            [(-2.8, -2.55), (2.8, 3.3)],
-            [(-2.8, -2.55), (1.6, 2.1)],
-            [(-2.8, -2.55), (0.4, 0.9)],
-            [(-2.8, -2.55), (-0.9, -0.4)],
-            [(-2.8, -2.55), (-2.1, -1.6)],
-            [(-2.8, -2.55), (-3.3, -2.8)],
-            [(-2.8, -2.55), (-4.5, -4.0)],
-        ]
-        self.rx_ranges_2 = [
             [(2.55, 2.8), (4.0, 4.5)],
             [(2.55, 2.8), (2.8, 3.3)],
             [(2.55, 2.8), (1.6, 2.1)],
@@ -122,6 +112,16 @@ class TwoAgentDataCenter(EnvBase):
             [(2.55, 2.8), (-2.1, -1.6)],
             [(2.55, 2.8), (-3.3, -2.8)],
             [(2.55, 2.8), (-4.5, -4.0)],
+        ]
+        self.rx_ranges_2 = [
+            [(-2.8, -2.55), (4.0, 4.5)],
+            [(-2.8, -2.55), (2.8, 3.3)],
+            [(-2.8, -2.55), (1.6, 2.1)],
+            [(-2.8, -2.55), (0.4, 0.9)],
+            [(-2.8, -2.55), (-0.9, -0.4)],
+            [(-2.8, -2.55), (-2.1, -1.6)],
+            [(-2.8, -2.55), (-3.3, -2.8)],
+            [(-2.8, -2.55), (-4.5, -4.0)],
         ]
 
     def _get_ob(self, tensordict: TensorDictBase) -> TensorDictBase:
@@ -147,7 +147,7 @@ class TwoAgentDataCenter(EnvBase):
         """
         rx_pos = []
         for rx_ranges in [self.rx_ranges_1, self.rx_ranges_2]:
-            rx_range = self.np_rng.choice(rx_ranges, size=1, replace=False)
+            rx_range = self.np_rng.choice(rx_ranges, size=1, replace=False)[0]
             x = self.np_rng.uniform(rx_range[0][0], rx_range[0][1])
             y = self.np_rng.uniform(rx_range[1][0], rx_range[1][1])
             pt = [float(x), float(y), 1.5]
