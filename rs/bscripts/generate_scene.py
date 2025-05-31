@@ -87,8 +87,6 @@ def generate_scene(args):
     # 2) Load constraints
     theta_lows, theta_highs = get_theta_constraints()
     phi_lows, phi_highs = get_phi_contraints()
-    print(f"theta_lows: {np.degrees(theta_lows)}, theta_highs: {np.degrees(theta_highs)}")
-    print(f"phi_lows: {np.degrees(phi_lows)}, phi_highs: {np.degrees(phi_highs)}")
 
     # 3) Get reflectors
     reflectors = {
