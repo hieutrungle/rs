@@ -232,7 +232,7 @@ class TwoAgentDataCenter(EnvBase):
         # ` TODO: prev_rss and cur_rss may need to be normalized from the SimulationWorker
         # // TODO: The rss now is not normalized
         # ` TODO: Now it is normalized!!
-        self.prev_rss = self.cur_rss
+        self.prev_rss = self.cur_rss.clone()
         self.cur_rss = self._get_rss(self.focals)
         reward = self._calculate_reward(self.cur_rss, self.prev_rss)
 
@@ -284,8 +284,8 @@ class TwoAgentDataCenter(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        cur_rss = copy.deepcopy(cur_rss) + 40
-        prev_rss = copy.deepcopy(prev_rss) + 40
+        cur_rss = copy.deepcopy(cur_rss) + 27.5
+        prev_rss = copy.deepcopy(prev_rss) + 27.5
 
         w1 = 1.2
         rf1 = cur_rss[:, 0:1, 0:1]
