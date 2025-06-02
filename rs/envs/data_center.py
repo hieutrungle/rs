@@ -49,6 +49,7 @@ class TwoAgentDataCenter(EnvBase):
         device="cpu",
         *,
         num_runs_before_restart=10,
+        eval_mode=False,
     ):
 
         super().__init__(device=device, batch_size=[1])
@@ -61,6 +62,7 @@ class TwoAgentDataCenter(EnvBase):
         self.np_rng = np.random.default_rng(seed)
         self.default_sionna_config = copy.deepcopy(sionna_config)
         self.num_runs_before_restart = num_runs_before_restart
+        self.eval_mode = eval_mode
 
         # devices
         rx_positions = torch.tensor(
@@ -178,14 +180,15 @@ class TwoAgentDataCenter(EnvBase):
         else:
             task_counter = self.mgr.task_counter
             self.mgr.shutdown()
-            self._init_manager(
-                sionna_config,
-                task_counter=task_counter,
-            )
+            self._init_manager(sionna_config, task_counter=task_counter)
 
         # Focal points
-        delta_focals = torch.randn_like(self.init_focals) * 1.5
-        focals = self.init_focals + delta_focals
+        if self.focals is None or not self.eval_mode:
+            # Randomly initialize focal points
+            delta_focals = torch.randn_like(self.init_focals) * 1.5
+            focals = self.init_focals + delta_focals
+        else:
+            focals = self.focals
         self.focals = torch.clamp(focals, self.focal_low, self.focal_high)
 
         self.cur_rss = self._get_rss(self.focals)

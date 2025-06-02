@@ -49,6 +49,7 @@ class ClassroomEval(EnvBase):
         device="cpu",
         *,
         num_runs_before_restart=10,
+        eval_mode=False,
     ):
 
         super().__init__(device=device, batch_size=[1])
@@ -61,6 +62,7 @@ class ClassroomEval(EnvBase):
         self.np_rng = np.random.default_rng(seed)
         self.default_sionna_config = copy.deepcopy(sionna_config)
         self.num_runs_before_restart = num_runs_before_restart
+        self.eval_mode = eval_mode
 
         # devices
         rx_positions = torch.tensor(
