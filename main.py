@@ -211,6 +211,7 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 seed=config.eval_seed + idx,
                 device=config.device,
                 num_runs_before_restart=20,
+                eval_mode=True,
             )
 
         return env
@@ -552,15 +553,6 @@ def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
         )
         for idx, tensordict_data in enumerate(collector):
             rollouts = tensordict_data
-
-        # rollouts = envs.rollout(
-        #     max_steps=30,
-        #     # max_steps=config.ep_len * 3,
-        #     policy=policy,
-        #     # callback=lambda env, _: env.render(),
-        #     auto_cast_to_device=True,
-        #     auto_reset=True,
-        # )
 
     # save the rollout
     image_dir = config.image_dir
