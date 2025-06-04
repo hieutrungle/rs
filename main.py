@@ -30,7 +30,7 @@ torch.multiprocessing.set_start_method("forkserver", force=True)
 
 import rs
 from rs.utils import pytorch_utils, utils
-from rs.envs import Classroom, ClassroomEval, TwoAgentDataCenter
+from rs.envs import Classroom, ClassroomEval, TwoAgentDataCenter, Classroom4UE, Classroom2UE
 
 # Tensordict modules
 from tensordict.nn import set_composite_lp_aggregate, TensorDictModule
@@ -189,6 +189,10 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         if config.command.lower() == "train":
             if config.env_id.lower() == "classroom":
                 env_cls = Classroom
+            elif config.env_id.lower() == "classroom2ue":
+                env_cls = Classroom2UE
+            elif config.env_id.lower() == "classroom4ue":
+                env_cls = Classroom4UE
             elif config.env_id.lower() == "data_center":
                 env_cls = TwoAgentDataCenter
             else:
@@ -202,6 +206,10 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         elif config.command.lower() == "eval":
             if config.env_id.lower() == "classroom":
                 env_cls = ClassroomEval
+            elif config.env_id.lower() == "classroom2ue":
+                env_cls = Classroom2UE
+            elif config.env_id.lower() == "classroom4ue":
+                env_cls = Classroom4UE
             elif config.env_id.lower() == "data_center":
                 env_cls = TwoAgentDataCenter
             else:
