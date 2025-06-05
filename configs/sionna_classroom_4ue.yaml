@@ -1,10 +1,10 @@
-base_config: shared_ap_4UE
-scene_name: shared_ap_4UE
+base_config: classroom_4UE
+scene_name: classroom_4UE
 
 blender_app: "/home/hieule/blender/blender-3.3.14-linux-x64/blender"
 blender_dir: "/home/hieule/blender/"
 xml_dir: "/home/hieule/research/rs/local_assets/blender"
-blender_script: "/home/hieule/research/rs/rs/bscripts/generate_scene_focusing_4UE.py"
+blender_script: "/home/hieule/research/rs/rs/bscripts/generate_scene_classroom_4UE.py"
 image_dir: "/home/hieule/research/rs/local_assets/images"
 
 resolution: [1920, 1080]
