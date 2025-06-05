@@ -4,13 +4,12 @@ scene_name: shared_ap
 blender_app: "/home/hieule/blender/blender-3.3.14-linux-x64/blender"
 blender_dir: "/home/hieule/blender/"
 xml_dir: "/home/hieule/research/rs/local_assets/blender"
-tile_path: "/home/hieule/research/marlis2/default_scenes/blender/tile/tile.obj"
 blender_script: "/home/hieule/research/rs/rs/bscripts/generate_scene_focusing.py"
 image_dir: "/home/hieule/research/rs/local_assets/images"
 
 resolution: [1920, 1080]
-rm_vmin: -80
-rm_vmax: -30
+rm_vmin: -55
+rm_vmax: -15
 verbose: true
 cam_position: [0.0, 2.1, 55.0]
 cam_orientation: [0.0, 0.0, 0.0]
@@ -30,8 +29,6 @@ tx_pattern: tr38901
 tx_polarization: V
 tx_positions: [[0.0, 8.0, 3.8], [0.0, 8.0, 3.8]]
 tx_orientations: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
-# tx_positions: [[0.0, 10.0, 3.8], [0.0, 10.0, 3.8]]
-# tx_orientations: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
 rx_num_rows: 1
 rx_num_cols: 1
 rx_vertical_spacing: 0.5
@@ -41,13 +38,9 @@ rx_polarization: V
 
 rx_positions: [[4.0, 0.0, 1.5], [-4.0, 0.0, 1.5]]
 rx_orientations: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
-# rx_positions:
-#     [[4.0, 0.0, 1.5], [-4.0, 0.0, 1.5], [0.0, 3.0, 1.5], [0.0, -3.0, 1.5]]
-# rx_orientations:
-#     [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
 
 # Path tracing parameters
-rm_max_depth: 10
+rm_max_depth: 6
 rm_cell_size: [0.2, 0.2]
 rm_num_samples: 1e6
 # rm_stop_threshold: -90.0
