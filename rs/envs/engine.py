@@ -345,13 +345,13 @@ class SignalCoverage:
             pattern=self.sionna_config["tx_pattern"],
             polarization=self.sionna_config["tx_polarization"],
         )
-        for i, (tx_pos, rt_pos) in enumerate(
+        for i, (tx_pos, rf_pos) in enumerate(
             zip(self.sionna_config["tx_positions"], self.sionna_config["rf_positions"])
         ):
             tx = Transmitter(
                 name=f"tx_{i}",
                 position=tx_pos,
-                look_at=rt_pos,
+                look_at=rf_pos,
                 color=[0.05, 0.05, 0.9],
                 display_radius=0.5,
             )
