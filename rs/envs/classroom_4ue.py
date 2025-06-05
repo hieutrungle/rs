@@ -76,11 +76,17 @@ class Classroom4UE(EnvBase):
         self.num_rf = len(sionna_config["rf_positions"])
         self.n_agents = self.num_rf
         self.init_focals = torch.tensor(
-            [[0.0, 5.5, 2.0] for _ in range(self.num_rf)], dtype=torch.float32, device=device
+            [[0.0, 0.0, 1.5] for _ in range(self.num_rf)], dtype=torch.float32, device=device
         )
         self.init_focals = self.init_focals.unsqueeze(0)
-        self.focal_low = torch.tensor([[[-10.0, -10.0, -4], [-6.5, -10.0, -4.0]]], device=device)
-        self.focal_high = torch.tensor([[[6.5, 10.0, 5.0], [10.0, 10.0, 5.0]]], device=device)
+        self.focal_low = torch.tensor(
+            [[[-10.0, -10.0, -4], [-10.0, -10.0, -4], [-6.5, -10.0, -4.0], [-6.5, -10.0, -4.0]]],
+            device=device,
+        )
+        self.focal_high = torch.tensor(
+            [[[6.5, 10.0, 5.0], [6.5, 10.0, 5.0], [10.0, 10.0, 5.0], [10.0, 10.0, 5.0]]],
+            device=device,
+        )
 
         # observations: focal points, rx_positions, rf_positions
         # actions: delta_focal_points
@@ -111,6 +117,10 @@ class Classroom4UE(EnvBase):
             [(4.0, 2.0), (4.0, -5.5), (-2.1, 2.1)],
             [(4.0, 2.0), (4.0, -5.5), (-2.1, 2.1)],
         ]
+        self.tx_positions = torch.tensor(
+            sionna_config["tx_positions"], dtype=torch.float32, device=device
+        )
+        self.tx_positions = self.tx_positions.unsqueeze(0)
 
     def _get_ob(self, tensordict: TensorDictBase) -> TensorDictBase:
 
@@ -185,12 +195,11 @@ class Classroom4UE(EnvBase):
                 task_counter=task_counter,
             )
 
-        # // TODO: Initialize focal points of reflectors
-        # delta_focals = self.np_rng.uniform(low=-0.001, high=0.001, size=(self.init_focals.shape))
         # Focal points
         if self.focals is None or not self.eval_mode:
             # Randomly initialize focal points
-            delta_focals = torch.randn_like(self.init_focals) * 1.5
+            delta_focals = torch.randn_like(self.init_focals)
+            delta_focals[..., :2] = delta_focals[..., :2] * 2.5  # Scale x and y by 2.5
             focals = self.init_focals + delta_focals
         else:
             focals = self.focals
@@ -262,7 +271,10 @@ class Classroom4UE(EnvBase):
     def _get_rss(self, focals: torch.Tensor) -> torch.Tensor:
 
         try:
-            self.mgr.run_simulation((focals.detach().cpu().numpy()[0],))
+            # combine tx_positions and focals
+            tx_focals = torch.cat([self.tx_positions, focals], dim=-1)
+            tx_focals = tx_focals.detach().cpu().numpy()
+            self.mgr.run_simulation((tx_focals[0],))
             res = None
             while res is None:
                 try:
@@ -289,20 +301,20 @@ class Classroom4UE(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        cur_rss = copy.deepcopy(cur_rss) + 40
-        prev_rss = copy.deepcopy(prev_rss) + 40
+        cur_rss = copy.deepcopy(cur_rss)
+        prev_rss = copy.deepcopy(prev_rss)
 
-        w1 = 1.2
-        rf1 = cur_rss[:, 0:1, 0:1]
-        rf2 = cur_rss[:, 1:2, 1:2]
-        rfs = torch.cat([rf1, rf2], dim=1)
+        w1 = 1.0
+        # Get the diagonal elements of the cur_rss tensor and put in a list rfs
+        rfs = [cur_rss[:, i : i + 1, i : i + 1] for i in range(self.num_rf)]
+        rfs = torch.concat(rfs, dim=1)
 
         w2 = 0.1
-        rf1_diff = rf1 - prev_rss[:, 0:1, 0:1]
-        rf2_diff = rf2 - prev_rss[:, 1:2, 1:2]
-        rfs_diff = torch.cat([rf1_diff, rf2_diff], dim=1)
+        prev_rfs = [prev_rss[:, i : i + 1, i : i + 1] for i in range(self.num_rf)]
+        prev_rfs = torch.concat(prev_rfs, dim=1)
+        rfs_diff = rfs - prev_rfs
 
-        reward = 0.3 / self.num_rf * (w1 * rfs + w2 * rfs_diff)
+        reward = 1 / 30 * (w1 * rfs + w2 * rfs_diff)
 
         return reward
 
