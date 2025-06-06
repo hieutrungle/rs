@@ -556,8 +556,8 @@ def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
             policy,
             device=config.device,
             storing_device=config.device,
-            frames_per_batch=config.ep_len * 10 * config.num_envs,
-            total_frames=config.ep_len * 10 * config.num_envs,
+            frames_per_batch=config.ep_len * 20 * config.num_envs,
+            total_frames=config.ep_len * 20 * config.num_envs,
         )
         for idx, tensordict_data in enumerate(collector):
             rollouts = tensordict_data
