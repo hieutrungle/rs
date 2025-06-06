@@ -146,6 +146,39 @@ class Classroom2UE(EnvBase):
             rx_pos.append(pt)
         return rx_pos
 
+    def _generate_moved_rx_positions(self, pos: np.ndarray, polygon: Polygon) -> Point:
+        """
+        Generate receiver positions by moving the original positions slightly within a defined range.
+        This function modifies the receiver positions by moving them within a circle of radius 0.2m.
+        """
+        r = 0.3  # radius of the circle to move the position
+        while True:
+            random_angle = self.np_rng.uniform(0, 2 * np.pi)
+            x = pos[0] + r * np.cos(random_angle)
+            y = pos[1] + r * np.sin(random_angle)
+            point = Point(x, y)
+            if polygon.contains(point):
+                return point
+
+    def _move_rx_positions(self) -> list:
+        """
+        Move the receiver positions slightly within a defined range.
+        This function modifies the receiver positions by moving them within a circle of radius 0.2m.
+        """
+        moved_rx_positions = []
+        for idx, pos in enumerate(self.rx_positions.squeeze(0).tolist()):
+            # move the position in 0.2m range using a circle with radius 0.2m
+            polygon = Polygon(self.rx_polygon_coords[idx])
+            # print(f"polygon {idx}: {polygon}")
+            # print(f"pos {idx}: {pos}")
+            pt = self._generate_moved_rx_positions(pos, polygon)
+            # print(f"pt {idx}: {pt}")
+            if len(pt.coords[0]) == 2:
+                pt = Point(pt.x, pt.y, 1.5)
+            pt = [float(coord) for coord in pt.coords[0]]
+            moved_rx_positions.append(pt)
+        return moved_rx_positions
+
     def _reset(self, tensordict: TensorDict = None) -> TensorDict:
 
         sionna_config = copy.deepcopy(self.default_sionna_config)
@@ -155,22 +188,30 @@ class Classroom2UE(EnvBase):
         self.rf_positions = rf_positions
 
         if self.focals is None or not self.eval_mode:
-            rx_positions = sionna_config["rx_positions"]
+            # rx_positions = sionna_config["rx_positions"]
             rx_positions = self._prepare_rx_positions()
         else:
-            rx_positions = []
-            for idx, pos in enumerate(self.rx_positions.squeeze(0).tolist()):
-                x = pos[0] + self.np_rng.normal(0, 0.2)
-                y = pos[1] + self.np_rng.normal(0, 0.2)
-                # Ensure the new position is within the defined ranges
-                point = Point(x, y)
-                polygon = Polygon(self.rx_polygon_coords[idx])
-                if not polygon.contains(point):
-                    # If the new position is outside the polygon, find the nearest point on the polygon boundary
-                    point = nearest_points(point, polygon.boundary)[1]
-                    x, y = float(point.x), float(point.y)
-                z = pos[2] if len(pos) == 3 else 1.5
-                rx_positions.append([x, y, z])
+            rx_positions = self._move_rx_positions()
+            # print(f"rx_positions: {rx_positions}")
+            # rx_positions = []
+            # for idx, pos in enumerate(self.rx_positions.squeeze(0).tolist()):
+
+            #     # move the position in 0.2m range using a circle with radius 0.2m
+            #     # find a point on a circle with radius 0.2m around the position
+            #     random_angle = self.np_rng.uniform(0, 2 * np.pi)
+            #     x = pos[0] + 0.25 * np.cos(random_angle)
+            #     y = pos[1] + 0.25 * np.sin(random_angle)
+            #     # x = pos[0] + self.np_rng.normal(0, 0.2)
+            #     # y = pos[1] + self.np_rng.normal(0, 0.2)
+            #     # Ensure the new position is within the defined ranges
+            #     point = Point(x, y)
+            #     polygon = Polygon(self.rx_polygon_coords[idx])
+            #     if not polygon.contains(point):
+            #         # If the new position is outside the polygon, find the nearest point on the polygon boundary
+            #         point = nearest_points(point, polygon.boundary)[1]
+            #         x, y = float(point.x), float(point.y)
+            #     z = pos[2] if len(pos) == 3 else 1.5
+            #     rx_positions.append([x, y, z])
         sionna_config["rx_positions"] = rx_positions
         rx_positions = torch.tensor(rx_positions, dtype=torch.float32, device=self.device)
         rx_positions = rx_positions.unsqueeze(0)
