@@ -216,7 +216,7 @@ class Classroom4UE(EnvBase):
         if self.focals is None or not self.eval_mode:
             # Randomly initialize focal points
             delta_focals = torch.randn_like(self.init_focals)
-            delta_focals[..., :2] = delta_focals[..., :2] * 2.5  # Scale x and y by 2.5
+            delta_focals[..., :2] = delta_focals[..., :2] * 1.5  # Scale x and y by 1.5
             focals = self.init_focals + delta_focals
         else:
             focals = self.focals
@@ -244,7 +244,7 @@ class Classroom4UE(EnvBase):
 
         # tensordict  contains the current state of the environment and the action taken
         # by the agent.
-        delta_focals = tensordict["agents", "action"]
+        delta_focals = tensordict["agents", "action"] * 0.6  # Scale the action by 0.6
         self.focals = self.focals + delta_focals
 
         # if the z values of any focal point is at the boundary of low and high, terminated = True
@@ -318,8 +318,8 @@ class Classroom4UE(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        cur_rss = copy.deepcopy(cur_rss)
-        prev_rss = copy.deepcopy(prev_rss)
+        cur_rss = copy.deepcopy(cur_rss) + 20
+        prev_rss = copy.deepcopy(prev_rss) + 20
 
         w1 = 1.0
         # Get the diagonal elements of the cur_rss tensor and put in a list rfs
