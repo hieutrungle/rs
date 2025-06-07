@@ -38,6 +38,7 @@ echo Blender directory: $BLENDER_DIR
 echo Coverage map directory: $SOURCE_DIR
 echo -e Assets directory: $ASSETS_DIR '\n'
 
-python ./main.py --command "train" --env_id "classroom4ue" --checkpoint_dir $SOURCE_DIR/local_assets/models --sionna_config_file $SOURCE_DIR/configs/sionna_classroom_4ue.yaml --replay_buffer_dir $SOURCE_DIR/local_assets/replay_buffer --source_dir $SOURCE_DIR --num_envs 1 --group "PPO_Beamfocusing_Classroom_4UE" --name "PPO_Rew_AdvNorm0"  --ep_len 50 --frames_per_batch 20 --n_iters 2 --num_epochs 2 --minibatch_size 2 --wandb "offline" --seed 1
+python ./main.py --command "eval" --env_id "classroom4ue" --checkpoint_dir "/home/hieule/research/rs/local_assets/eval_ppo_classroom_4ue" --sionna_config_file "/home/hieule/research/rs/configs/sionna_classroom_4ue.yaml" --num_envs 3 --group "PPO_Beamfocusing_Classroom_4UE" --name "AdvNorm" --load_model "/home/hieule/research/rs/local_assets/ppo_classroom_4ue/pretrained0/checkpoint_44.pt" --wandb "offline"  --source_dir $SOURCE_DIR --image_dir "/home/hieule/research/rs/local_assets/images_ppo_classroom_4ue" --ep_len 20
+# --ep_len 30 --frames_per_batch 10 --n_iters 2 --num_epochs 2 --minibatch_size 2 --wandb "offline" --seed 1
 # --load_model "/home/hieule/research/rs/local_assets_2/models/checkpoint_1.pt"
 # python ./main.py --command "eval" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --wandb "offline" --num_envs 1
