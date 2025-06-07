@@ -177,10 +177,7 @@ class Classroom4UE(EnvBase):
         for idx, pos in enumerate(self.rx_positions.squeeze(0).tolist()):
             # move the position in 0.2m range using a circle with radius 0.2m
             polygon = Polygon(self.rx_polygon_coords[idx])
-            # print(f"polygon {idx}: {polygon}")
-            # print(f"pos {idx}: {pos}")
             pt = self._generate_moved_rx_positions(pos, polygon)
-            # print(f"pt {idx}: {pt}")
             if len(pt.coords[0]) == 2:
                 pt = Point(pt.x, pt.y, 1.5)
             pt = [float(coord) for coord in pt.coords[0]]
@@ -196,7 +193,6 @@ class Classroom4UE(EnvBase):
         self.rf_positions = rf_positions
 
         if self.focals is None or not self.eval_mode:
-            # rx_positions = sionna_config["rx_positions"]
             rx_positions = self._prepare_rx_positions()
         else:
             rx_positions = self._move_rx_positions()
