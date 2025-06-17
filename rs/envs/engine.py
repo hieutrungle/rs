@@ -352,6 +352,7 @@ class SignalCoverage:
                 name=f"tx_{i}",
                 position=tx_pos,
                 look_at=rf_pos,
+                power_dbm=self.sionna_config["tx_power_dbm"],
                 color=[0.05, 0.05, 0.9],
                 display_radius=0.5,
             )

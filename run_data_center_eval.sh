@@ -38,7 +38,7 @@ echo Blender directory: $BLENDER_DIR
 echo Coverage map directory: $SOURCE_DIR
 echo -e Assets directory: $ASSETS_DIR '\n'
 
-python ./main.py --command "train" --env_id "data_center" --checkpoint_dir $SOURCE_DIR/local_assets/models --sionna_config_file $SOURCE_DIR/configs/sionna_data_center.yaml --replay_buffer_dir $SOURCE_DIR/local_assets/replay_buffer --source_dir $SOURCE_DIR/ --num_envs 3 --image_dir $SOURCE_DIR/local_assets/data_center
-# --ep_len 50 --frames_per_batch 10 --n_iters 2 --num_epochs 2 --minibatch_size 2 --wandb "offline"
+python ./main.py --command "eval" --env_id "data_center" --checkpoint_dir $SOURCE_DIR/local_assets/ppo_data_center_2ue_models_20steps --sionna_config_file $SOURCE_DIR/configs/sionna_data_center.yaml --source_dir $SOURCE_DIR/ --num_envs 3 --image_dir $SOURCE_DIR/local_assets/data_center --ep_len 20 --load_model $SOURCE_DIR/local_assets/ppo_data_center_2ue_models/checkpoint_168.pt --image_dir $SOURCE_DIR/local_assets/images_ppo_data_center_2ue_20steps
+#  --ep_len 50 --frames_per_batch 10 --n_iters 2 --num_epochs 2 --minibatch_size 2 --wandb "offline"
 # --load_model "/home/hieule/research/rs/local_assets_2/models/checkpoint_1.pt"
 # python ./main.py --command "eval" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --wandb "offline" --num_envs 1

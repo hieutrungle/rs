@@ -22,6 +22,7 @@ synthetic_array: true
 rf_positions: [[7.4, 9.5, 2.86059], [-7.4, 9.5, 2.86059]]
 
 # Transmitter and receiver parameters
+tx_power_dbm: 5.0
 tx_num_rows: 1
 tx_num_cols: 2
 tx_vertical_spacing: 0.5

@@ -8,8 +8,8 @@ blender_script: "/home/hieule/research/rs/rs/bscripts/generate_data_center.py"
 image_dir: "/home/hieule/research/rs/local_assets/images"
 
 resolution: [1920, 1080]
-rm_vmin: -80
-rm_vmax: -30
+rm_vmin: -60
+rm_vmax: -20
 verbose: true
 cam_position: [0.0, 0.5, 40.0]
 cam_orientation: [0.0, 0.0, 0.0]
@@ -21,6 +21,7 @@ synthetic_array: true
 rf_positions: [[5.7, 0.0, 2.9], [-5.7, 0.0, 2.9]]
 
 # Transmitter and receiver parameters
+tx_power_dbm: 5.0
 tx_num_rows: 1
 tx_num_cols: 2
 tx_vertical_spacing: 0.5
