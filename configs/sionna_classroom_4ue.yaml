@@ -8,8 +8,8 @@ blender_script: "/home/hieule/research/rs/rs/bscripts/generate_scene_classroom_4
 image_dir: "/home/hieule/research/rs/local_assets/images"
 
 resolution: [1920, 1080]
-rm_vmin: -60
-rm_vmax: -20
+rm_vmin: -100
+rm_vmax: -60
 verbose: true
 cam_position: [0.0, 2.1, 55.0]
 cam_orientation: [0.0, 0.0, 0.0]
