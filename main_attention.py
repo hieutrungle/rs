@@ -314,7 +314,7 @@ def main(config: TrainConfig):
 
         critic_net = attention_critics.MultiAgentAttentionCritics(
             obs_dim=ob_spec["agents", "observation"].shape[-1],
-            embed_dim=128,
+            embed_dim=256,
             num_heads=4,
             n_agents=n_agents,
             device=config.device,
