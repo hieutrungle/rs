@@ -37,9 +37,9 @@ class MultiAgentAttentionCritics(nn.Module):
 
         # Value head for critic
         self.value_head = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim // 2, device=device),
-            nn.ReLU(),
-            nn.Linear(embed_dim // 2, 1, device=device),
+            # nn.Linear(embed_dim, embed_dim // 2, device=device),
+            # nn.ReLU(),
+            nn.Linear(embed_dim, 1, device=device),
         )
 
         # Layer normalization
