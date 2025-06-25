@@ -208,7 +208,7 @@ class Classroom2UE(EnvBase):
         if self.focals is None or not self.eval_mode:
             # Randomly initialize focal points
             delta_focals = torch.randn_like(self.init_focals)
-            delta_focals[..., :2] = delta_focals[..., :2] * 2.5  # Scale x and y by 2.5
+            delta_focals[..., :2] = delta_focals[..., :2] * 1.5  # Scale x and y by 1.5
             focals = self.init_focals + delta_focals
         else:
             focals = self.focals
