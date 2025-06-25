@@ -310,20 +310,20 @@ class Classroom2UE(EnvBase):
         """Calculate the reward based on the current and previous rss."""
         # Reward is the difference between current and previous rss
 
-        cur_rss = copy.deepcopy(cur_rss) + 40
-        prev_rss = copy.deepcopy(prev_rss) + 40
+        cur_rss = copy.deepcopy(cur_rss) + 20
+        prev_rss = copy.deepcopy(prev_rss) + 20
 
-        w1 = 1.2
-        rf1 = cur_rss[:, 0:1, 0:1]
-        rf2 = cur_rss[:, 1:2, 1:2]
-        rfs = torch.cat([rf1, rf2], dim=1)
+        w1 = 1.0
+        # Get the diagonal elements of the cur_rss tensor and put in a list rfs
+        rfs = [cur_rss[:, i : i + 1, i : i + 1] for i in range(self.num_rf)]
+        rfs = torch.concat(rfs, dim=1)
 
         w2 = 0.1
-        rf1_diff = rf1 - prev_rss[:, 0:1, 0:1]
-        rf2_diff = rf2 - prev_rss[:, 1:2, 1:2]
-        rfs_diff = torch.cat([rf1_diff, rf2_diff], dim=1)
+        prev_rfs = [prev_rss[:, i : i + 1, i : i + 1] for i in range(self.num_rf)]
+        prev_rfs = torch.concat(prev_rfs, dim=1)
+        rfs_diff = rfs - prev_rfs
 
-        reward = 0.3 / self.num_rf * (w1 * rfs + w2 * rfs_diff)
+        reward = 1 / 30 * (w1 * rfs + w2 * rfs_diff)
 
         return reward
 
