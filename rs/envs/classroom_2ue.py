@@ -236,7 +236,7 @@ class Classroom2UE(EnvBase):
 
         # tensordict  contains the current state of the environment and the action taken
         # by the agent.
-        delta_focals = tensordict["agents", "action"]
+        delta_focals = tensordict["agents", "action"] * 0.6  # Scale the action by 0.6
         self.focals = self.focals + delta_focals
 
         # if the z values of any focal point is at the boundary of low and high, terminated = True
