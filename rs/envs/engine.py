@@ -70,17 +70,8 @@ class SimulationWorker(mp.Process):
         blender_dir = self.sionna_config["blender_dir"]
         self.blender_model = os.path.join(blender_dir, "models", f"{self.scene_name}.blend")
 
-        # Distance for each receiver to each reflector
-        # ` TODO: normalized factor = distance ^ 2
-        rx_positions = np.array(sionna_config["rx_positions"])
-        rf_positions = np.array(sionna_config["rf_positions"])
-        distances = np.zeros((len(rx_positions), len(rf_positions)))
-        for i, rx_pos in enumerate(rx_positions):
-            distances[i] = np.linalg.norm(rx_pos - rf_positions, axis=1)
-        self.factor = np.power(distances, 2.2)
-
-        self.num_rx = len(rx_positions)
-        self.num_rf = len(rf_positions)
+        self.num_rx = len(sionna_config["rx_positions"])
+        self.num_rf = len(sionna_config["rf_positions"])
 
     def run(self):
         """TF 2.x simulation with forkserver-compatible initialization"""
@@ -154,37 +145,20 @@ class SimulationWorker(mp.Process):
 
     def _run_simulation(self, sig_map: "SignalCoverage", task_id: int) -> np.ndarray:
         """Leaky simulation of Sionna"""
-        # sig_map = params
-        # // TODO: return gains from radio map
-        # start_time = time.time()
         rm = sig_map.compute_cmap()
-        rss = rm.rss
+        rm_rss = rm.rss
         rx_cell_indices = rm.rx_cell_indices
 
-        # ` TODO: rss may need to be normalized from the SimulationWorker
-        rx_rss_dbs = np.full((self.num_rf, self.num_rx), -100.0)
+        rssis = np.zeros((self.num_rf, self.num_rx))
         for rx_idx in range(rx_cell_indices.shape[1]):
-            rx_rss = rss[:, rx_cell_indices[1][rx_idx], rx_cell_indices[0][rx_idx]]
-            # normalizd by multiply with factor = distance^2
-            rx_rss = rx_rss * self.factor[rx_idx]
-            rx_rss_db = sionna.rt.utils.watt_to_dbm(rx_rss)
-            rx_rss_dbs[:, rx_idx] = rx_rss_db
-        rx_rss_dbs = np.array(rx_rss_dbs)
+            rssi = rm_rss[:, rx_cell_indices[1][rx_idx], rx_cell_indices[0][rx_idx]]
+            rssis[:, rx_idx] = rssi
 
         if self.rendering:
-            # start_time = time.time()
             filename = os.path.join(self.image_dir, f"output_{task_id:05d}.png")
             sig_map.render_to_file(radio_map=rm, filename=filename)
-            # print(f"Time to render: {time.time() - start_time:.2f} seconds")
 
-        # print(f"Time to compute cmap: {time.time() - start_time:.2f} seconds")
-        # start_time = time.time()
-        # paths = sig_map.compute_paths()
-        # print(f"Time to compute paths: {time.time() - start_time:.2f} seconds")
-        # # paths = paths.numpy()
-        # taps = paths.cir(out_type="numpy")
-        # return (rss, taps)
-        return rx_rss_dbs
+        return rssis
 
     def _blender_step(self, focals: np.ndarray[float]) -> np.ndarray[float]:
         """

@@ -5,28 +5,34 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragmentation
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
-
-from collections import deque
+from torchinfo import summary
 from dataclasses import dataclass
 import traceback
-import importlib.resources
-import sys
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import wandb
 import pyrallis
 from typing import Callable
 import torch.multiprocessing
 
 torch.multiprocessing.set_start_method("forkserver", force=True)
-from torchrl.envs import check_env_specs
 from torchrl.envs import ParallelEnv, EnvBase, SerialEnv
 import gc
 from rs.utils import pytorch_utils, utils
-from rs.envs import Classroom, ClassroomEval, TwoAgentDataCenter, Classroom4UE, Classroom2UE
-from rs.modules.agents import attention_critics
+from rs.envs import (
+    Classroom,
+    ClassroomEval,
+    TwoAgentDataCenter,
+    Classroom4UE,
+    Classroom2UE,
+    Conference2UEAllocation,
+)
+from rs.modules.agents import allocation, attention_critics
 
 # Tensordict modules
+from tensordict import TensorDict, from_module
 from tensordict.nn import set_composite_lp_aggregate, TensorDictModule
 from tensordict.nn.distributions import NormalParamExtractor
 
@@ -53,6 +59,7 @@ from torchrl.modules import MultiAgentMLP, ProbabilisticActor, TanhNormal
 
 # Loss
 from torchrl.objectives import ClipPPOLoss, ValueEstimators
+import torchrl.objectives.value
 
 # Utils
 torch.manual_seed(0)
@@ -126,9 +133,152 @@ class TrainConfig:
 
         self.frames_per_batch = self.frames_per_batch * self.num_envs
         self.total_frames: int = self.frames_per_batch * self.n_iters
+        self.allocator_path = os.path.join(self.checkpoint_dir, "allocator.pt")
 
         device = pytorch_utils.init_gpu()
         self.device = device
+
+
+# class PolicyGradientAllocationLoss(nn.Module):
+#     """Policy gradient loss specifically for allocation tasks"""
+
+#     def __init__(self, entropy_coeff=0.01, value_coeff=0.5):
+#         super().__init__()
+#         self.entropy_coeff = entropy_coeff
+#         self.value_coeff = value_coeff
+
+#     def forward(self, allocation_logits, actions, advantages, returns, values):
+#         """Policy gradient loss with baseline
+#         Args:
+#             allocation_logits (torch.Tensor): Logits for allocation decisions, shape (batch_size, n_agents, n_targets)
+#             actions (torch.Tensor): Actions (selected_loc_indices) taken by the agents, shape (batch_size, n_agents)
+#             advantages (torch.Tensor): Advantages for the actions taken, shape (batch_size, n_agents)
+#             returns (torch.Tensor): Returns for the actions taken, shape (batch_size, n_agents)
+#             values (torch.Tensor): State values predicted by the critic, shape (batch_size, n_agents, 1)
+#         Returns:
+#             dict: A dictionary containing the total loss, policy loss, entropy, and value loss
+#         """
+#         print(f"allocation_logits: {allocation_logits.shape}")
+#         print(f"actions: {actions.shape}")
+#         print(f"advantages: {advantages.shape}")
+#         print(f"returns: {returns.shape}")
+#         print(f"values: {values.shape}")
+#         batch_size, n_agents, n_targets = allocation_logits.shape
+
+#         # Convert to proper shape
+#         logits_flat = allocation_logits.view(-1, n_targets)
+#         actions_flat = actions.view(-1)
+#         advantages_flat = advantages.view(-1)
+
+#         # Compute log probabilities
+#         log_probs = F.log_softmax(logits_flat, dim=-1)
+#         action_log_probs = log_probs.gather(1, actions_flat.unsqueeze(1)).squeeze(1)
+
+#         # Policy gradient loss
+#         policy_loss = -(action_log_probs * advantages_flat).mean()
+
+#         # Entropy bonus for exploration
+#         probs = F.softmax(logits_flat, dim=-1)
+#         entropy = -(probs * log_probs).sum(dim=-1).mean()
+
+#         # Value function loss
+#         value_loss = F.mse_loss(values.squeeze(), returns)
+
+#         # Total loss
+#         total_loss = policy_loss - self.entropy_coeff * entropy + self.value_coeff * value_loss
+
+#         return {
+#             "total_loss": total_loss,
+#             "policy_loss": policy_loss,
+#             "entropy": entropy,
+#             "value_loss": value_loss,
+#         }
+
+
+class PolicyGradientAllocationLoss(nn.Module):
+    """Policy gradient loss specifically for allocation tasks"""
+
+    def __init__(self, entropy_coeff=0.01, value_coeff=0.5):
+        super().__init__()
+        self.entropy_coeff = entropy_coeff
+        self.value_coeff = value_coeff
+
+    def forward(self, allocation_logits, advantages, returns, values):
+        """Policy gradient loss with baseline
+        Args:
+            allocation_logits (torch.Tensor): Logits for allocation decisions, shape (batch_size, n_agents, n_targets)
+            advantages (torch.Tensor): Advantages for the actions taken, shape (batch_size, n_agents)
+            returns (torch.Tensor): Returns for the actions taken, shape (batch_size, n_agents)
+            values (torch.Tensor): State values predicted by the critic, shape (batch_size, n_agents, 1)
+        Returns:
+            dict: A dictionary containing the total loss, policy loss, entropy, and value loss
+        """
+        n_targets = allocation_logits.shape[-1]
+
+        allocation_probs = F.softmax(allocation_logits, dim=-1)
+        location_target_dist = torch.distributions.Independent(
+            base_distribution=torch.distributions.Categorical(allocation_probs),
+            reinterpreted_batch_ndims=1,
+        )
+        # actions (torch.Tensor): Actions (selected_loc_indices) taken by the agents, shape (batch_size, n_agents)
+        # actions = selected_loc_indices
+        selected_loc_indices = location_target_dist.sample()
+        location_log_probs = location_target_dist.log_prob(selected_loc_indices)
+
+        # Policy gradient loss
+        action_log_probs = location_log_probs.unsqueeze(-1)
+        policy_loss = -(action_log_probs * advantages).mean()
+
+        # Entropy bonus for exploration
+        logits_flat = allocation_logits.view(-1, n_targets)
+        probs = F.softmax(logits_flat, dim=-1)
+        log_probs = F.log_softmax(logits_flat, dim=-1)
+        entropy = -(probs * log_probs).sum(dim=-1).mean()
+
+        # Value function loss
+        value_loss = F.mse_loss(values, returns)
+
+        # Total loss
+        total_loss = policy_loss - self.entropy_coeff * entropy + self.value_coeff * value_loss
+
+        return {
+            "total_loss": total_loss,
+            "policy_loss": policy_loss,
+            "entropy": entropy,
+            "value_loss": value_loss,
+        }
+
+
+def get_allocator_loss(allocator, tensordict_data):
+    """Compute the loss for the allocator"""
+    # Get the allocation logits and state values from the allocator
+    allocator(tensordict_data)
+    # allocator_target(tensordict_data)
+
+    # Get the actions (selected_loc_indices) taken by the agents
+    allocation_logits = tensordict_data.get(("allocator", "allocation_logits"))
+
+    # Get the rewards and dones
+    rewards = tensordict_data.get(("next", "allocator", "reward"))
+    # dones = tensordict_data.get(("next", "allocator", "done"))
+
+    # Get the state values
+    state_values = tensordict_data.get(("allocator", "state_value"))
+
+    # Compute advantages and returns
+    advantages = rewards - state_values
+    returns = advantages + state_values
+
+    # Compute the loss
+    loss_module = PolicyGradientAllocationLoss()
+    loss_dict = loss_module(
+        allocation_logits,
+        advantages,
+        returns,
+        state_values,
+    )
+
+    return loss_dict
 
 
 def wandb_init(config: TrainConfig) -> None:
@@ -169,8 +319,6 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         # image_dir = config.image_dir
         sionna_config["image_dir"] = image_dir
 
-        seed = config.seed + idx
-
         if config.command.lower() == "train":
             sionna_config["rendering"] = False
         else:
@@ -185,11 +333,14 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 env_cls = Classroom4UE
             elif config.env_id.lower() == "data_center":
                 env_cls = TwoAgentDataCenter
+            elif config.env_id.lower() == "conference2ueallocation":
+                env_cls = Conference2UEAllocation
             else:
                 raise ValueError(f"Unknown environment id: {config.env_id}")
             env = env_cls(
                 sionna_config,
-                seed=seed,
+                allocator_path=config.allocator_path,
+                seed=config.seed + idx,
                 device=config.device,
                 num_runs_before_restart=20,
             )
@@ -202,10 +353,13 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 env_cls = Classroom4UE
             elif config.env_id.lower() == "data_center":
                 env_cls = TwoAgentDataCenter
+            elif config.env_id.lower() == "conference2ueallocation":
+                env_cls = Conference2UEAllocation
             else:
                 raise ValueError(f"Unknown environment id: {config.env_id}")
             env = env_cls(
                 sionna_config,
+                allocator_path=config.allocator_path,
                 seed=config.eval_seed + idx,
                 device=config.device,
                 num_runs_before_restart=20,
@@ -232,15 +386,15 @@ def main(config: TrainConfig):
     torch.multiprocessing.set_start_method("forkserver", force=True)
     pytorch_utils.init_seed(config.seed)
 
-    # envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
+    envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
     # check_env_specs(envs)
 
-    envs = ParallelEnv(
-        config.num_envs,
-        [make_env(config, idx) for idx in range(config.num_envs)],
-        mp_start_method="forkserver",
-        shared_memory=False,
-    )
+    # envs = ParallelEnv(
+    #     config.num_envs,
+    #     [make_env(config, idx) for idx in range(config.num_envs)],
+    #     mp_start_method="forkserver",
+    #     shared_memory=False,
+    # )
     ob_spec = envs.observation_spec
     ac_spec = envs.action_spec
 
@@ -259,15 +413,77 @@ def main(config: TrainConfig):
             ObservationNorm(
                 loc=loc,
                 scale=scale,
-                in_keys=[("agents", "observation")],
-                out_keys=[("agents", "observation")],
+                in_keys=[("agents", "observation"), ("global_agent_observation")],
+                out_keys=[("agents", "observation"), ("global_agent_observation")],
                 standard_normal=True,
             ),
             DoubleToFloat(),
             StepCounter(max_steps=config.ep_len),
-            RewardSum(in_keys=[envs.reward_key], out_keys=[("agents", "episode_reward")]),
+            RewardSum(in_keys=[("agents", "reward")], out_keys=[("agents", "episode_reward")]),
+            RewardSum(
+                in_keys=[("allocator", "reward")], out_keys=[("allocator", "episode_reward")]
+            ),
         ),
     )
+
+    # batch_size = 3
+    n_agents = 2
+    n_targets = 2
+    agent_state_dim = 6
+    target_state_dim = 3
+    # Initialize the task allocator
+    allocator = allocation.GraphAttentionTaskAllocator(
+        agent_state_dim=agent_state_dim,
+        target_state_dim=target_state_dim,
+        embed_dim=128,
+        num_heads=4,
+        num_layers=1,
+        device=config.device,
+    )
+    allocator_target = allocation.GraphAttentionTaskAllocator(
+        agent_state_dim=agent_state_dim,
+        target_state_dim=target_state_dim,
+        embed_dim=128,
+        num_heads=4,
+        num_layers=1,
+        device=config.device,
+    )
+
+    torch.save(allocator.state_dict(), config.allocator_path)
+    print(f"Saved allocator to {config.allocator_path}")
+
+    allocator = TensorDictModule(
+        allocator,
+        in_keys=[
+            ("allocator", "agent_states"),
+            ("allocator", "target_states"),
+            ("allocator", "compatibility"),
+        ],
+        out_keys=[
+            ("allocator", "allocation_logits"),
+            ("allocator", "state_value"),
+        ],
+    )
+    allocator_target = TensorDictModule(
+        allocator_target,
+        in_keys=[
+            ("next", "allocator", "agent_states"),
+            ("next", "allocator", "target_states"),
+            ("next", "allocator", "compatibility"),
+        ],
+        out_keys=[
+            ("next", "allocator", "allocation_logits"),
+            ("next", "allocator", "state_value"),
+        ],
+    )
+    # copy the allocator to the target
+    allocator_target.load_state_dict(allocator.state_dict())
+    allo_rb = TensorDictReplayBuffer(
+        storage=LazyTensorStorage(301, device=config.device),
+        sampler=SamplerWithoutReplacement(),
+        batch_size=100,
+    )
+    allocator_optim = torch.optim.Adam(allocator.parameters(), lr=config.lr)
 
     if loc is None and scale is None:
         envs.transform[0].init_stats(num_iter=config.ep_len * 3, reduce_dim=(0, 1, 2), cat_dim=1)
@@ -322,7 +538,7 @@ def main(config: TrainConfig):
 
         critic = TensorDictModule(
             module=critic_net,
-            in_keys=[("agents", "observation")],
+            in_keys=["global_agent_observation"],
             out_keys=[("agents", "state_value")],
         )
 
@@ -354,7 +570,7 @@ def main(config: TrainConfig):
             # normalize_advantage=False,
         )
         loss_module.set_keys(  # We have to tell the loss where to find the keys
-            reward=envs.reward_key,
+            reward=("agents", "reward"),
             action=envs.action_key,
             value=("agents", "state_value"),
             # These last 2 keys will be expanded to match the reward shape
@@ -380,14 +596,18 @@ def main(config: TrainConfig):
         if config.command == "train":
             print("Training...")
             train(
-                envs,
-                config,
-                collector,
-                policy,
-                critic,
-                loss_module,
-                optim,
-                replay_buffer,
+                envs=envs,
+                config=config,
+                collector=collector,
+                policy=policy,
+                critic=critic,
+                loss_module=loss_module,
+                optim=optim,
+                replay_buffer=replay_buffer,
+                allocator=allocator,
+                allocator_target=allocator_target,
+                allocator_optim=allocator_optim,
+                allocator_rb=allo_rb,
             )
         else:
             print("Evaluation...")
@@ -405,21 +625,6 @@ def main(config: TrainConfig):
             envs.close()
 
 
-def transform_envs(envs, config: TrainConfig):
-    envs = TransformedEnv(
-        envs,
-        Compose(
-            ObservationNorm(
-                in_keys=[("agents", "observation")], out_keys=[("agents", "observation")]
-            ),
-            DoubleToFloat(),
-            StepCounter(max_steps=config.ep_len),
-            RewardSum(in_keys=[envs.reward_key], out_keys=[("agents", "episode_reward")]),
-        ),
-    )
-    return envs
-
-
 def train(
     envs: ParallelEnv,
     config: TrainConfig,
@@ -429,6 +634,10 @@ def train(
     loss_module: ClipPPOLoss,
     optim: torch.optim.Optimizer,
     replay_buffer: ReplayBuffer,
+    allocator: TensorDictModule,
+    allocator_target: TensorDictModule,
+    allocator_optim: torch.optim.Optimizer,
+    allocator_rb: TensorDictReplayBuffer,
 ):
 
     if config.track_wandb:
@@ -442,29 +651,58 @@ def train(
         saved_config["device"] = str(config.device)
         logger.log_hparams(saved_config)
 
+    allocator_loss = PolicyGradientAllocationLoss(entropy_coeff=config.entropy_eps, value_coeff=0.5)
+    allocator_loss = TensorDictModule(
+        allocator_loss,
+        in_keys=[
+            ("allocator", "allocation_logits"),
+            ("allocator", "selected_loc_indices"),
+            ("next", "allocator", "advantage"),
+            ("next", "allocator", "returns"),
+            ("next", "allocator", "state_value"),
+        ],
+        out_keys=[
+            "total_loss",
+            "policy_loss",
+            "entropy",
+            "value_loss",
+        ],
+    )
+
     pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
     GAE = loss_module.value_estimator
     episode_reward_mean_list = []
     for idx, tensordict_data in enumerate(collector):
 
         # We need to expand the done and terminated to match the reward shape (this is expected by the value estimator)
+        # Agents
         tensordict_data.set(
             ("next", "agents", "done"),
             tensordict_data.get(("next", "done"))
             .unsqueeze(-1)
-            .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
+            .expand(tensordict_data.get_item_shape(("next", ("agents", "reward")))),
         )
         tensordict_data.set(
             ("next", "agents", "terminated"),
             tensordict_data.get(("next", "terminated"))
             .unsqueeze(-1)
-            .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
+            .expand(tensordict_data.get_item_shape(("next", ("agents", "reward")))),
         )
         tensordict_data.set(
             ("next", "agents", "truncated"),
             tensordict_data.get(("next", "truncated"))
             .unsqueeze(-1)
-            .expand(tensordict_data.get_item_shape(("next", envs.reward_key))),
+            .expand(tensordict_data.get_item_shape(("next", ("agents", "reward")))),
+        )
+        # print(f"tensordict_data before GAE: {tensordict_data}\n")
+
+        # Allocator
+        tensordict_data.set(("next", "allocator", "done"), tensordict_data.get(("next", "done")))
+        tensordict_data.set(
+            ("next", "allocator", "terminated"), tensordict_data.get(("next", "done"))
+        )
+        tensordict_data.set(
+            ("next", "allocator", "truncated"), tensordict_data.get(("next", "truncated"))
         )
 
         with torch.no_grad():
@@ -474,28 +712,47 @@ def train(
                 params=loss_module.critic_network_params,
                 target_params=loss_module.target_critic_network_params,
             )
+            # # allocator_gae(
+            # #     tensordict_data,
+            # #     params=from_module(allocator).data,
+            # #     target_params=from_module(allocator_target).data,
+            # # )
 
         data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
         replay_buffer.extend(data_view)
 
-        for _ in range(config.num_epochs):
+        allocator_tensordict = get_allocator_tensordict(data_view)
+        allocator_rb.extend(allocator_tensordict)
+        print(f"allocator_rb size: {len(allocator_rb)}")
+
+        allocator_loss = None
+        if idx > 20:
+            for i in range(10):
+                for _ in range(len(allocator_rb) // config.minibatch_size):
+                    allocator_subdata = allocator_rb.sample()
+                    allocator_loss_vals = get_allocator_loss(allocator, allocator_subdata)
+                    allocator_loss_vals["total_loss"].backward()
+                    torch.nn.utils.clip_grad_norm_(allocator.parameters(), config.max_grad_norm)
+                    allocator_optim.step()
+                    allocator_optim.zero_grad()
+                    allocator_loss = allocator_loss_vals
+
+        for i in range(config.num_epochs):
             for _ in range(config.frames_per_batch // config.minibatch_size):
                 subdata = replay_buffer.sample()
                 loss_vals = loss_module(subdata)
-
                 loss_value = (
                     loss_vals["loss_objective"]
                     + loss_vals["loss_critic"]
                     + loss_vals["loss_entropy"]
                 )
-
                 loss_value.backward()
-
                 torch.nn.utils.clip_grad_norm_(loss_module.parameters(), config.max_grad_norm)
                 optim.step()
                 optim.zero_grad()
 
         collector.update_policy_weights_()
+        torch.save(allocator.state_dict(), config.allocator_path)
 
         # Logging
         done = tensordict_data.get(("next", "agents", "done"))
@@ -513,6 +770,21 @@ def train(
             "loss_critic": loss_vals["loss_critic"].item(),
             "loss_entropy": loss_vals["loss_entropy"].item(),
         }
+        if allocator_loss is None:
+            allocator_infos = {
+                "allocator_loss": 0.0,
+                "allocator_policy_loss": 0.0,
+                "allocator_entropy": 0.0,
+                "allocator_value_loss": 0.0,
+            }
+        else:
+            allocator_infos = {
+                "allocator_loss": allocator_loss["total_loss"].item(),
+                "allocator_policy_loss": allocator_loss["policy_loss"].item(),
+                "allocator_entropy": allocator_loss["entropy"].item(),
+                "allocator_value_loss": allocator_loss["value_loss"].item(),
+            }
+        logs.update(allocator_infos)
         step = idx * config.frames_per_batch
         if config.track_wandb:
             wandb.log({**logs}, step=step)
@@ -552,6 +824,55 @@ def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
     rollout_path = os.path.join(config.checkpoint_dir, f"env_rollout_{name}.pt")
     torch.save(rollouts, rollout_path)
     print(f"Rollout saved to {rollout_path}")
+
+
+def get_allocator_tensordict(tensordict_data: TensorDict) -> TensorDict:
+    """Get the tensordict for the allocator"""
+    # select data based on done signal
+    if tensordict_data.get(("next", "done")) is None:
+        raise ValueError("The tensordict does not contain the 'done' key.")
+    step_count = tensordict_data.get(("step_count"))
+    dones = tensordict_data.get(("next", "done"))
+    keys = [
+        ("allocator", "agent_states"),
+        ("allocator", "target_states"),
+        ("allocator", "compatibility"),
+        ("next", "allocator", "episode_reward"),
+        ("next", "allocator", "done"),
+        ("next", "allocator", "terminated"),
+        ("next", "allocator", "truncated"),
+    ]
+    new_keys = [
+        ("allocator", "agent_states"),
+        ("allocator", "target_states"),
+        ("allocator", "compatibility"),
+        ("next", "allocator", "reward"),
+        ("next", "allocator", "done"),
+        ("next", "allocator", "terminated"),
+        ("next", "allocator", "truncated"),
+    ]
+    tmp_allocator_tensordict = tensordict_data.select(*keys)
+    # rename the keys
+    for key, new_key in zip(keys, new_keys):
+        tmp_allocator_tensordict.rename_key_(key, new_key)
+
+    allocator_tensordict = {}
+    for key in new_keys:
+        # get values if done = True
+        vals = []
+        for i, done in enumerate(dones):
+            if done:
+                vals.append(tmp_allocator_tensordict.get(key)[i])
+        allocator_tensordict[key] = torch.stack(vals, dim=0)
+        if "reward" in key:
+            allocator_tensordict[key] /= step_count[dones].to(torch.float).unsqueeze(-1)
+
+    allocator_tensordict = TensorDict(
+        allocator_tensordict,
+        batch_size=[len(allocator_tensordict["next", "allocator", "reward"])],
+        device=tensordict_data.device,
+    )
+    return allocator_tensordict
 
 
 if __name__ == "__main__":

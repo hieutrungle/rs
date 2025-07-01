@@ -38,7 +38,7 @@ echo Blender directory: $BLENDER_DIR
 echo Coverage map directory: $SOURCE_DIR
 echo -e Assets directory: $ASSETS_DIR '\n'
 
-python ./main_attention.py --command "train" --env_id "classroom2ue" --checkpoint_dir $SOURCE_DIR/test_local_assets/models --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Beamfocusing_Conference_2UE" --name "AdvNorm_Attention" 
-# --ep_len 10 --frames_per_batch 15 --n_iters 2 --num_epochs 10 --minibatch_size 10 --wandb "offline" --seed 1
+python ./main_attention.py --command "train" --env_id "conference2ueallocation" --checkpoint_dir $SOURCE_DIR/test_local_assets/models --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "AdvNorm_Attention_Allocation_Conference_2UE" --ssed 1 --ep_len 30
+# --ep_len 5 --frames_per_batch 20 --n_iters 10 --num_epochs 6 --minibatch_size 4 --wandb "offline" --seed 2
 # --load_model "/home/hieule/research/rs/local_assets_2/models/checkpoint_1.pt"
 # python ./main.py --command "eval" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --wandb "offline" --num_envs 1

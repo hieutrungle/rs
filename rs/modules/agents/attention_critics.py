@@ -31,7 +31,6 @@ class MultiAgentAttentionCritics(nn.Module):
         self.agent_attention = attention.MultiAgentAttention(
             embed_dim=embed_dim,
             num_heads=num_heads,
-            max_agents=n_agents,
             device=device,
         )
 

@@ -1,4 +1,4 @@
-from rs.modules.agents import allocation_critics
+from rs.modules.agents import allocation
 import torch
 
 torch.manual_seed(0)  # For reproducibility
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     num_heads = 2  # Number of attention heads
     device = "cpu"  # Device to run on
 
-    allocator = allocation_critics.MultiAgentAttentionAllocator(
+    allocation = allocation.MultiAgentAttentionAllocator(
         obs_dim=obs_dim,
         embed_dim=embed_dim,
         num_heads=num_heads,
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     agent_mask = agent_mask.bool()  # Convert to boolean mask
     attn_mask = pad_to_attn_mask(agent_mask, num_heads)
 
-    outputs = allocator(observations, attn_mask, agent_mask)
+    outputs = allocation(observations, attn_mask, agent_mask)
     for key, value in outputs.items():
         print(f"{key}: {value.shape}")
         print(f"{key}: {value}")

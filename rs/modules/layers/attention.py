@@ -38,9 +38,8 @@ import math
 
 
 class MultiAgentAttention(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, max_agents: int, device="cpu"):
+    def __init__(self, embed_dim: int, num_heads: int, device="cpu"):
         super().__init__()
-        self.max_agents = max_agents
         self.attention = nn.MultiheadAttention(
             embed_dim=embed_dim, num_heads=num_heads, batch_first=True, device=device
         )
