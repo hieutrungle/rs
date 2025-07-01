@@ -22,3 +22,4 @@ GPUtil
 tqdm
 hydra-core==1.3.2
 torchinfo
+shapely
