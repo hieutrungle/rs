@@ -736,6 +736,7 @@ def train(
                     allocator_optim.step()
                     allocator_optim.zero_grad()
                     allocator_loss = allocator_loss_vals
+        torch.save(allocator.module.state_dict(), config.allocator_path)
 
         for i in range(config.num_epochs):
             for _ in range(config.frames_per_batch // config.minibatch_size):
@@ -752,7 +753,6 @@ def train(
                 optim.zero_grad()
 
         collector.update_policy_weights_()
-        torch.save(allocator.state_dict(), config.allocator_path)
 
         # Logging
         done = tensordict_data.get(("next", "agents", "done"))
