@@ -77,6 +77,7 @@ class TrainConfig:
     command: str = "train"  # the command to run
     load_model: str = "-1"  # Model load file name for resume training, "-1" doesn't load
     load_eval_model: str = "-1"  # Model load file name for evaluation, "-1" doesn't load
+    load_allocator: str = "-1"  # Allocator load file name for resume training, "-1" doesn't load
     checkpoint_dir: str = "-1"  # the path to save the model
     replay_buffer_dir: str = "-1"  # the path to save the replay buffer
     load_replay_buffer: str = "-1"  # the path to load the replay buffer
@@ -440,6 +441,9 @@ def main(config: TrainConfig):
         num_layers=1,
         device=config.device,
     )
+    if config.load_allocator != "-1":
+        allocator.load_state_dict(torch.load(config.load_allocator))
+        print(f"Loaded allocator from {config.load_allocator}")
     allocator_target = allocation.GraphAttentionTaskAllocator(
         agent_state_dim=agent_state_dim,
         target_state_dim=target_state_dim,
@@ -811,8 +815,8 @@ def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
             policy,
             device=config.device,
             storing_device=config.device,
-            frames_per_batch=config.ep_len * 20 * config.num_envs,
-            total_frames=config.ep_len * 20 * config.num_envs,
+            frames_per_batch=config.ep_len * 10 * config.num_envs,
+            total_frames=config.ep_len * 10 * config.num_envs,
         )
         for idx, tensordict_data in enumerate(collector):
             rollouts = tensordict_data
