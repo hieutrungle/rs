@@ -131,7 +131,7 @@ class GraphAttentionTaskAllocator(nn.Module):
     def apply_mha_on_3d_input(self, embedded, mha_layer):
         return mha_layer(embedded)[0]  # [0] to get attn_output
 
-    def forward(self, agent_states, target_states, compatibility_scores, mask=None):
+    def forward(self, agent_states, target_states, compatibility_scores=None, mask=None):
         """Forward pass with attention mechanism"""
         # batch_size = agent_states.shape[0]
         n_agents = agent_states.shape[-2]
