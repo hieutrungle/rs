@@ -122,10 +122,10 @@ class TrainConfig:
     group: str = "PPO_raw"  # wandb group name
     name: str = "FirstRun"  # wandb run name
 
-    # Ablation
-    no_compatibility_scores: bool = (
-        False  # whether to disable compatibility scores in the allocator
-    )
+    # Ablation Study
+    no_compatibility_scores: bool = False  # whether to disable allocator compatibility scores
+    random_assignment: bool = False  # whether to use random assignment of users to targets
+    no_allocator: bool = False  # whether to disable the allocator
 
     def __post_init__(self):
         if self.source_dir == "-1":
@@ -293,6 +293,8 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 seed=config.seed + idx,
                 device=config.device,
                 num_runs_before_restart=20,
+                random_assignment=config.random_assignment,
+                no_allocator=config.no_allocator,
                 no_compatibility_scores=config.no_compatibility_scores,
             )
         elif config.command.lower() == "eval":
@@ -315,6 +317,8 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 device=config.device,
                 num_runs_before_restart=20,
                 eval_mode=True,
+                random_assignment=config.random_assignment,
+                no_allocator=config.no_allocator,
                 no_compatibility_scores=config.no_compatibility_scores,
             )
 
@@ -681,7 +685,8 @@ def train(
         print(f"allocator_rb size: {len(allocator_rb)}")
 
         allocator_loss = None
-        if idx > 20:
+        if (not config.random_assignment and not config.no_allocator) and idx > 1:
+            # if idx > 20:
             for i in range(10):
                 for _ in range(len(allocator_rb) // config.minibatch_size):
                     allocator_subdata = allocator_rb.sample()
@@ -691,7 +696,8 @@ def train(
                     allocator_optim.step()
                     allocator_optim.zero_grad()
                     allocator_loss = allocator_loss_vals
-        torch.save(allocator.module.state_dict(), config.allocator_path)
+            torch.save(allocator.module.state_dict(), config.allocator_path)
+        print(f"allocator loss: {allocator_loss}")
 
         for i in range(config.num_epochs):
             for _ in range(config.frames_per_batch // config.minibatch_size):

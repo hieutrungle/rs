@@ -52,6 +52,8 @@ class Conference2UEAllocation(EnvBase):
         seed: int = None,
         device: str = "cpu",
         *,
+        random_assignment: bool = False,
+        no_allocator: bool = False,
         no_compatibility_scores: bool = False,
         num_runs_before_restart: int = 10,
         eval_mode: bool = False,
@@ -69,6 +71,8 @@ class Conference2UEAllocation(EnvBase):
         self.num_runs_before_restart = num_runs_before_restart
         self.eval_mode = eval_mode
         self.allocator_path = allocator_path
+        self.random_assignment = random_assignment
+        self.no_allocator = no_allocator
         self.no_compatibility_scores = no_compatibility_scores
 
         # devices
@@ -334,46 +338,51 @@ class Conference2UEAllocation(EnvBase):
             focals = self.focals
         self.focals = torch.clamp(focals, self.focal_low, self.focal_high)
 
-        # Initialize allocation tracking
-        # agent: (rf_x, rf_y, rf_z, fp_x, fp_y, fp_z)
-        # target: (rx_x, rx_y, rx_z, angle{tx-tf-rx})
-        # compatibility_score ~ (1 / abs(angle))
-        allocator = allocation.GraphAttentionTaskAllocator(
-            agent_state_dim=6,
-            target_state_dim=3,
-            embed_dim=128,
-            num_heads=4,
-            num_layers=1,
-            device=self.device,
-        )
-        allocator.eval()
-        allocator.load_state_dict(torch.load(self.allocator_path, map_location=self.device))
+        # Compatibility for allocator
         self.compatibility_matrix = self._calculate_compatibility()
         if self.no_compatibility_scores:
             self.compatibility_matrix = self.compatibility_matrix * 0.0
         self.allocation_agent_states = torch.cat([rf_positions, focals], dim=-1)
         self.allocation_target_states = rx_positions.clone()
         self._normalize_allocation_states()
-        allocation_state = {
-            "agent_states": self.allocation_agent_states,
-            "target_states": self.allocation_target_states,
-            "compatibility_scores": self.compatibility_matrix.unsqueeze(0),
-        }
-        with torch.no_grad():
-            allocation_outputs = allocator(**allocation_state)
 
-        # Sample actions from allocation probabilities
-        self.allocation_logits = allocation_outputs[0]
-        allocation_logits = self.allocation_logits.squeeze(0)
-        allocation_probs = F.softmax(allocation_logits, dim=-1)
+        # Initialize allocation tracking
+        # agent: (rf_x, rf_y, rf_z, fp_x, fp_y, fp_z)
+        # target: (rx_x, rx_y, rx_z, angle{tx-tf-rx})
+        # compatibility_score ~ (1 / abs(angle))
+        if self.no_allocator or self.random_assignment:
+            self.selected_loc_indices = torch.randint(
+                0, self.num_rx, (self.num_rf,), device=self.device
+            )
+        else:
+            allocator = allocation.GraphAttentionTaskAllocator(
+                agent_state_dim=6,
+                target_state_dim=3,
+                embed_dim=128,
+                num_heads=4,
+                num_layers=1,
+                device=self.device,
+            )
+            allocator.eval()
+            allocator.load_state_dict(torch.load(self.allocator_path, map_location=self.device))
+            allocation_state = {
+                "agent_states": self.allocation_agent_states,
+                "target_states": self.allocation_target_states,
+                "compatibility_scores": self.compatibility_matrix.unsqueeze(0),
+            }
+            with torch.no_grad():
+                allocation_outputs = allocator(**allocation_state)
 
-        selected_loc_indices = torch.argmax(allocation_probs, dim=-1)
-        self.selected_loc_indices = selected_loc_indices
+            # Sample actions from allocation probabilities
+            self.allocation_logits = allocation_outputs[0]
+            allocation_logits = self.allocation_logits.squeeze(0)
+            allocation_probs = F.softmax(allocation_logits, dim=-1)
+            self.selected_loc_indices = torch.argmax(allocation_probs, dim=-1)
         self.rx_positions = self.rx_positions.to(self.device)
         self.selected_rx_positions = self.rx_positions[0, self.selected_loc_indices, :].unsqueeze(0)
 
         # if selected_loc_indices are overlapping, we need to penalize the reward
-        if len(set(selected_loc_indices.tolist())) < self.num_rf:
+        if len(set(self.selected_loc_indices.tolist())) < self.num_rf:
             self.allocator_reward_const = torch.ones((1, 1), device=self.device) * (-10.0) / 30.0
         else:
             self.allocator_reward_const = torch.ones((1, 1), device=self.device) * 10.0 / 30.0
@@ -495,13 +504,22 @@ class Conference2UEAllocation(EnvBase):
         # Reward Engineering
         cur_rss = copy.deepcopy(cur_rss)
         prev_rss = copy.deepcopy(prev_rss)
-        loc_idx = self.selected_loc_indices  # shape: (num_rf,)
-        rf_idx = torch.arange(self.num_rf, device=cur_rss.device)
-        # shape: (1, num_rf, 1)
+        if self.no_allocator:
+            rfs = torch.mean(cur_rss)  # shape: ()
+            rfs = rfs.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+            rfs = torch.repeat_interleave(rfs, self.num_rf, dim=-2)
+            prev_rfs = torch.mean(prev_rss)
+            prev_rfs = prev_rfs.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+            prev_rfs = torch.repeat_interleave(prev_rfs, self.num_rf, dim=-2)
+        else:
+            loc_idx = self.selected_loc_indices  # shape: (num_rf,)
+            rf_idx = torch.arange(self.num_rf, device=cur_rss.device)
+            # shape: (1, num_rf, 1)
+            rfs = cur_rss[:, rf_idx, loc_idx].unsqueeze(-1)
+            prev_rfs = prev_rss[:, rf_idx, loc_idx].unsqueeze(-1)
         c = 80
-        rfs = cur_rss[:, rf_idx, loc_idx].unsqueeze(-1) + c
-        prev_rfs = prev_rss[:, rf_idx, loc_idx].unsqueeze(-1) + c
-
+        rfs += c
+        prev_rfs += c
         w1 = 1.0
         w2 = 0.1
         rfs_diff = rfs - prev_rfs
