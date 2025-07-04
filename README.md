@@ -86,6 +86,8 @@ bash run.sh
 ### Ablation
 
 - No compatibility scores: `--no_compatibility_scores True`
+- Random assignment of users to targets: `--random_assignment True`
+- No allocator, simple MARL with the shared reward is the sum of all RSSI: `--no_allocator True`
 
 ### Video Generation
 
