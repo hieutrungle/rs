@@ -351,8 +351,6 @@ class Conference2UEAllocation(EnvBase):
         self.compatibility_matrix = self._calculate_compatibility()
         if self.no_compatibility_scores:
             self.compatibility_matrix = self.compatibility_matrix * 0.0
-        print(f"Compatibility matrix: {self.compatibility_matrix}")
-        exit()
         self.allocation_agent_states = torch.cat([rf_positions, focals], dim=-1)
         self.allocation_target_states = rx_positions.clone()
         self._normalize_allocation_states()
