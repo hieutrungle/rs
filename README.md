@@ -83,6 +83,10 @@ cd home/research/rs
 bash run.sh
 ```
 
+### Ablation
+
+- No compatibility scores: `--no_compatibility_scores True`
+
 ### Video Generation
 
 Remember to create a directory for the videos: `mkdir {OUTPUT_VIDEO_DIR}`

@@ -52,6 +52,7 @@ class Conference2UEAllocation(EnvBase):
         seed: int = None,
         device: str = "cpu",
         *,
+        no_compatibility_scores: bool = False,
         num_runs_before_restart: int = 10,
         eval_mode: bool = False,
     ):
@@ -68,6 +69,7 @@ class Conference2UEAllocation(EnvBase):
         self.num_runs_before_restart = num_runs_before_restart
         self.eval_mode = eval_mode
         self.allocator_path = allocator_path
+        self.no_compatibility_scores = no_compatibility_scores
 
         # devices
         rx_positions = torch.tensor(
@@ -347,6 +349,10 @@ class Conference2UEAllocation(EnvBase):
         allocator.eval()
         allocator.load_state_dict(torch.load(self.allocator_path, map_location=self.device))
         self.compatibility_matrix = self._calculate_compatibility()
+        if self.no_compatibility_scores:
+            self.compatibility_matrix = self.compatibility_matrix * 0.0
+        print(f"Compatibility matrix: {self.compatibility_matrix}")
+        exit()
         self.allocation_agent_states = torch.cat([rf_positions, focals], dim=-1)
         self.allocation_target_states = rx_positions.clone()
         self._normalize_allocation_states()

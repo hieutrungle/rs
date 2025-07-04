@@ -122,6 +122,11 @@ class TrainConfig:
     group: str = "PPO_raw"  # wandb group name
     name: str = "FirstRun"  # wandb run name
 
+    # Ablation
+    no_compatibility_scores: bool = (
+        False  # whether to disable compatibility scores in the allocator
+    )
+
     def __post_init__(self):
         if self.source_dir == "-1":
             raise ValueError("Source dir is required for training")
@@ -138,62 +143,6 @@ class TrainConfig:
 
         device = pytorch_utils.init_gpu()
         self.device = device
-
-
-# class PolicyGradientAllocationLoss(nn.Module):
-#     """Policy gradient loss specifically for allocation tasks"""
-
-#     def __init__(self, entropy_coeff=0.01, value_coeff=0.5):
-#         super().__init__()
-#         self.entropy_coeff = entropy_coeff
-#         self.value_coeff = value_coeff
-
-#     def forward(self, allocation_logits, actions, advantages, returns, values):
-#         """Policy gradient loss with baseline
-#         Args:
-#             allocation_logits (torch.Tensor): Logits for allocation decisions, shape (batch_size, n_agents, n_targets)
-#             actions (torch.Tensor): Actions (selected_loc_indices) taken by the agents, shape (batch_size, n_agents)
-#             advantages (torch.Tensor): Advantages for the actions taken, shape (batch_size, n_agents)
-#             returns (torch.Tensor): Returns for the actions taken, shape (batch_size, n_agents)
-#             values (torch.Tensor): State values predicted by the critic, shape (batch_size, n_agents, 1)
-#         Returns:
-#             dict: A dictionary containing the total loss, policy loss, entropy, and value loss
-#         """
-#         print(f"allocation_logits: {allocation_logits.shape}")
-#         print(f"actions: {actions.shape}")
-#         print(f"advantages: {advantages.shape}")
-#         print(f"returns: {returns.shape}")
-#         print(f"values: {values.shape}")
-#         batch_size, n_agents, n_targets = allocation_logits.shape
-
-#         # Convert to proper shape
-#         logits_flat = allocation_logits.view(-1, n_targets)
-#         actions_flat = actions.view(-1)
-#         advantages_flat = advantages.view(-1)
-
-#         # Compute log probabilities
-#         log_probs = F.log_softmax(logits_flat, dim=-1)
-#         action_log_probs = log_probs.gather(1, actions_flat.unsqueeze(1)).squeeze(1)
-
-#         # Policy gradient loss
-#         policy_loss = -(action_log_probs * advantages_flat).mean()
-
-#         # Entropy bonus for exploration
-#         probs = F.softmax(logits_flat, dim=-1)
-#         entropy = -(probs * log_probs).sum(dim=-1).mean()
-
-#         # Value function loss
-#         value_loss = F.mse_loss(values.squeeze(), returns)
-
-#         # Total loss
-#         total_loss = policy_loss - self.entropy_coeff * entropy + self.value_coeff * value_loss
-
-#         return {
-#             "total_loss": total_loss,
-#             "policy_loss": policy_loss,
-#             "entropy": entropy,
-#             "value_loss": value_loss,
-#         }
 
 
 class PolicyGradientAllocationLoss(nn.Module):
@@ -344,6 +293,7 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 seed=config.seed + idx,
                 device=config.device,
                 num_runs_before_restart=20,
+                no_compatibility_scores=config.no_compatibility_scores,
             )
         elif config.command.lower() == "eval":
             if config.env_id.lower() == "classroom":
@@ -365,6 +315,7 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 device=config.device,
                 num_runs_before_restart=20,
                 eval_mode=True,
+                no_compatibility_scores=config.no_compatibility_scores,
             )
 
         return env
