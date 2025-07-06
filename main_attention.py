@@ -348,11 +348,6 @@ def main(config: TrainConfig):
 
     utils.log_config(config.__dict__)
 
-    print(
-        f"Total frames: {config.total_frames}, n_iters: {config.n_iters}, frames_per_batch: {config.frames_per_batch}"
-    )
-    exit()
-
     # Reset the torch compiler if needed
     torch.compiler.reset()
     torch.multiprocessing.set_start_method("forkserver", force=True)
