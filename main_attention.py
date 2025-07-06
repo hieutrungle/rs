@@ -7,6 +7,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 from torchinfo import summary
 from dataclasses import dataclass
+import copy
 import traceback
 import numpy as np
 import torch
@@ -40,7 +41,7 @@ from tensordict.nn.distributions import NormalParamExtractor
 from torchrl.collectors import SyncDataCollector
 from torchrl.data.replay_buffers import TensorDictReplayBuffer, ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
-from torchrl.data.replay_buffers.storages import LazyTensorStorage
+from torchrl.data.replay_buffers.storages import LazyTensorStorage, LazyMemmapStorage
 
 # Env
 from torchrl.envs import (
@@ -79,8 +80,8 @@ class TrainConfig:
     load_eval_model: str = "-1"  # Model load file name for evaluation, "-1" doesn't load
     load_allocator: str = "-1"  # Allocator load file name for resume training, "-1" doesn't load
     checkpoint_dir: str = "-1"  # the path to save the model
-    replay_buffer_dir: str = "-1"  # the path to save the replay buffer
-    load_replay_buffer: str = "-1"  # the path to load the replay buffer
+    allocator_replay_buffer_dir: str = "-1"  # the path to save the replay buffer
+    load_allocator_replay_buffer: str = "-1"  # the path to load the replay buffer
     source_dir: str = "-1"  # the path to the source code
     verbose: bool = False  # whether to log to console
     seed: int = 10  # seed of the experiment
@@ -134,8 +135,12 @@ class TrainConfig:
             raise ValueError("Checkpoints dir is required for training")
         if self.sionna_config_file == "-1":
             raise ValueError("Sionna config file is required for training")
-
+        if self.allocator_replay_buffer_dir == "-1":
+            self.allocator_replay_buffer_dir = os.path.join(
+                self.checkpoint_dir, "allocator_replay_buffer"
+            )
         utils.mkdir_not_exists(self.checkpoint_dir)
+        utils.mkdir_not_exists(self.allocator_replay_buffer_dir)
 
         self.frames_per_batch = self.frames_per_batch * self.num_envs
         self.total_frames: int = self.frames_per_batch * self.n_iters
@@ -437,11 +442,17 @@ def main(config: TrainConfig):
     )
     # copy the allocator to the target
     allocator_target.load_state_dict(allocator.state_dict())
-    allo_rb = TensorDictReplayBuffer(
-        storage=LazyTensorStorage(301, device=config.device),
-        sampler=SamplerWithoutReplacement(),
+    rb_dir = config.allocator_replay_buffer_dir
+    allo_rb = ReplayBuffer(
+        storage=LazyMemmapStorage(301, scratch_dir=rb_dir),
         batch_size=100,
     )
+    if config.load_allocator_replay_buffer != "-1":
+        allo_rb.loads(config.load_allocator_replay_buffer)
+        print(
+            f"Loaded allocator replay buffer from {config.load_allocator_replay_buffer} with size {len(allo_rb)}"
+        )
+    allo_rb.set_sampler(SamplerWithoutReplacement())
     allocator_optim = torch.optim.Adam(allocator.parameters(), lr=config.lr)
 
     if loc is None and scale is None:
@@ -578,6 +589,9 @@ def main(config: TrainConfig):
         print(e)
         traceback.print_exc()
     finally:
+        allo_rb.set_sampler(torchrl.data.replay_buffers.RandomSampler())
+        allo_rb.dumps(config.allocator_replay_buffer_dir)
+        wandb.finish()
         gc.collect()
         torch.cuda.empty_cache()
         if not envs.is_closed:
@@ -681,23 +695,24 @@ def train(
         replay_buffer.extend(data_view)
 
         allocator_tensordict = get_allocator_tensordict(data_view)
-        allocator_rb.extend(allocator_tensordict)
+        allocator_rb.extend(allocator_tensordict.clone().to("cpu"))
         print(f"allocator_rb size: {len(allocator_rb)}")
 
         allocator_loss = None
-        if (not config.random_assignment and not config.no_allocator) and idx > 1:
-            # if idx > 20:
-            for i in range(10):
-                for _ in range(len(allocator_rb) // config.minibatch_size):
-                    allocator_subdata = allocator_rb.sample()
-                    allocator_loss_vals = get_allocator_loss(allocator, allocator_subdata)
-                    allocator_loss_vals["total_loss"].backward()
-                    torch.nn.utils.clip_grad_norm_(allocator.parameters(), config.max_grad_norm)
-                    allocator_optim.step()
-                    allocator_optim.zero_grad()
-                    allocator_loss = allocator_loss_vals
-            torch.save(allocator.module.state_dict(), config.allocator_path)
-        print(f"allocator loss: {allocator_loss}")
+        if not config.random_assignment and not config.no_allocator:
+            if idx > 1 or config.load_allocator_replay_buffer != "-1":
+                for i in range(4):
+                    for _ in range(len(allocator_rb) // config.minibatch_size):
+                        allocator_subdata = allocator_rb.sample()
+                        allocator_subdata = allocator_subdata.to(config.device)
+                        allocator_loss_vals = get_allocator_loss(allocator, allocator_subdata)
+                        allocator_loss_vals["total_loss"].backward()
+                        torch.nn.utils.clip_grad_norm_(allocator.parameters(), config.max_grad_norm)
+                        allocator_optim.step()
+                        allocator_optim.zero_grad()
+                        allocator_loss = allocator_loss_vals
+                torch.save(allocator.module.state_dict(), config.allocator_path)
+            print(f"Allocator loss: {allocator_loss}")
 
         for i in range(config.num_epochs):
             for _ in range(config.frames_per_batch // config.minibatch_size):
