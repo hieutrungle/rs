@@ -706,7 +706,7 @@ def train(
 
         allocator_loss = None
         if not config.random_assignment and not config.no_allocator:
-            if idx > 1 or config.load_allocator_replay_buffer != "-1":
+            if idx > 30 or config.load_allocator_replay_buffer != "-1":
                 for i in range(4):
                     for _ in range(len(allocator_rb) // config.minibatch_size):
                         allocator_subdata = allocator_rb.sample()
