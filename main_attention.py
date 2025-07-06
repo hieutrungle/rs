@@ -104,6 +104,7 @@ class TrainConfig:
     # Sampling
     frames_per_batch: int = 200  # Number of team frames collected per training iteration
     n_iters: int = 500  # Number of sampling and training iterations
+    total_episodes: int = 3000  # Total number of episodes to run in the training
 
     # Training
     num_epochs: int = 40  # Number of optimization steps per training iteration
@@ -143,8 +144,13 @@ class TrainConfig:
         utils.mkdir_not_exists(self.allocator_replay_buffer_dir)
 
         self.frames_per_batch = self.frames_per_batch * self.num_envs
-        self.total_frames: int = self.frames_per_batch * self.n_iters
+        # self.total_frames: int = self.frames_per_batch * self.n_iters
         self.allocator_path = os.path.join(self.checkpoint_dir, "allocator.pt")
+
+        total_steps = self.total_episodes * self.ep_len
+        n_iters = total_steps // self.frames_per_batch + 1
+        self.n_iters = n_iters
+        self.total_frames = self.frames_per_batch * self.n_iters
 
         device = pytorch_utils.init_gpu()
         self.device = device
@@ -341,6 +347,11 @@ def main(config: TrainConfig):
         print(f"=" * 30 + "Evaluation" + "=" * 30)
 
     utils.log_config(config.__dict__)
+
+    print(
+        f"Total frames: {config.total_frames}, n_iters: {config.n_iters}, frames_per_batch: {config.frames_per_batch}"
+    )
+    exit()
 
     # Reset the torch compiler if needed
     torch.compiler.reset()
