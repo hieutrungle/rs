@@ -259,6 +259,7 @@ class Conference2UEAllocation(EnvBase):
         std = 8.0
         self.allocation_agent_states = (self.allocation_agent_states - mean) / std
         self.allocation_target_states = (self.allocation_target_states - mean) / std
+        self.allocation_init_agent_states = (self.allocation_init_agent_states - mean) / std
 
     def _get_state(self, tensordict: TensorDict):
         """Get current state representation for all agents"""
@@ -266,11 +267,12 @@ class Conference2UEAllocation(EnvBase):
         # Allocation/controller observations
         global_allocation_ob = {
             "allocator": {
+                "init_agent_states": self.allocation_init_agent_states,
                 "agent_states": self.allocation_agent_states,
                 "target_states": self.allocation_target_states,
-                # "selected_rx_positions": self.selected_rx_positions,
-                # "selected_loc_indices": self.selected_loc_indices.unsqueeze(0),
-                # "allocation_logits": self.allocation_logits,
+                "selected_loc_indices": self.selected_loc_indices.unsqueeze(0),
+                "allocation_logits": self.allocation_logits,
+                "allocation_logprobs": self.allocation_logprobs,
                 "compatibility": self.compatibility_matrix.unsqueeze(0),
                 "allocation_mask": self.allocation_mask.unsqueeze(0),
             }
@@ -337,6 +339,7 @@ class Conference2UEAllocation(EnvBase):
         else:
             focals = self.focals
         self.focals = torch.clamp(focals, self.focal_low, self.focal_high)
+        self.init_agent_focals = self.focals.clone()
 
         # Compatibility for allocator
         self.compatibility_matrix = self._calculate_compatibility()
@@ -344,6 +347,9 @@ class Conference2UEAllocation(EnvBase):
             self.compatibility_matrix = self.compatibility_matrix * 0.0
         self.allocation_agent_states = torch.cat([rf_positions, focals], dim=-1)
         self.allocation_target_states = rx_positions.clone()
+        self.allocation_init_agent_states = torch.cat(
+            [self.rf_positions, self.init_agent_focals], dim=-1
+        )
         self._normalize_allocation_states()
 
         # Initialize allocation tracking
@@ -375,9 +381,14 @@ class Conference2UEAllocation(EnvBase):
 
             # Sample actions from allocation probabilities
             self.allocation_logits = allocation_outputs[0]
-            allocation_logits = self.allocation_logits.squeeze(0)
-            allocation_probs = F.softmax(allocation_logits, dim=-1)
-            self.selected_loc_indices = torch.argmax(allocation_probs, dim=-1)
+            dist = torch.distributions.Independent(
+                base_distribution=torch.distributions.Categorical(logits=self.allocation_logits),
+                reinterpreted_batch_ndims=1,
+            )
+            self.selected_loc_indices = torch.argmax(self.allocation_logits, dim=-1)
+            self.allocation_logprobs = dist.log_prob(self.selected_loc_indices)
+            self.allocation_logprobs = self.allocation_logprobs.unsqueeze(-1)
+            self.selected_loc_indices = self.selected_loc_indices.squeeze(0)
         self.rx_positions = self.rx_positions.to(self.device)
         self.selected_rx_positions = self.rx_positions[0, self.selected_loc_indices, :].unsqueeze(0)
 
@@ -547,6 +558,13 @@ class Conference2UEAllocation(EnvBase):
                 device=self.device,
             ),
             allocator=Composite(
+                init_agent_states=Bounded(
+                    low=-100,
+                    high=100,
+                    shape=(1, self.num_rf, 6),  # (rf_x, rf_y, rf_z, fp_x, fp_y, fp_z)
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
                 agent_states=Bounded(
                     low=-100,
                     high=100,
@@ -561,15 +579,25 @@ class Conference2UEAllocation(EnvBase):
                     dtype=torch.float32,
                     device=self.device,
                 ),
-                # selected_rx_positions=Bounded(
-                #     low=-100,
-                #     high=100,
-                #     shape=(1, self.num_rx, 3),  # (rx_x, rx_y, rx_z)
-                #     dtype=torch.float32,
-                #     device=self.device,
-                # ),
+                selected_loc_indices=Bounded(
+                    low=0,
+                    high=self.num_rx - 1,
+                    shape=(1, self.num_rf),  # selected receiver indices for each RF
+                    dtype=torch.int64,
+                    device=self.device,
+                ),
                 compatibility=UnboundedContinuous(
                     shape=(1, self.num_rf, self.num_rx),  # compatibility scores
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
+                allocation_logits=UnboundedContinuous(
+                    shape=(1, self.num_rf, self.num_rx),  # allocation logits
+                    dtype=torch.float32,
+                    device=self.device,
+                ),
+                allocation_logprobs=UnboundedContinuous(
+                    shape=(1, 1),
                     dtype=torch.float32,
                     device=self.device,
                 ),
