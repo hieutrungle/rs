@@ -422,15 +422,15 @@ def main(config: TrainConfig):
     torch.multiprocessing.set_start_method("forkserver", force=True)
     pytorch_utils.init_seed(config.seed)
 
-    envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
+    # envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
     # check_env_specs(envs)
 
-    # envs = ParallelEnv(
-    #     config.num_envs,
-    #     [make_env(config, idx) for idx in range(config.num_envs)],
-    #     mp_start_method="forkserver",
-    #     shared_memory=False,
-    # )
+    envs = ParallelEnv(
+        config.num_envs,
+        [make_env(config, idx) for idx in range(config.num_envs)],
+        mp_start_method="forkserver",
+        shared_memory=False,
+    )
     ob_spec = envs.observation_spec
     ac_spec = envs.action_spec
 
