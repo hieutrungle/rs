@@ -1,9 +1,11 @@
 import os
+import warnings
 
 os.environ["TORCHDYNAMO_INLINE_INBUILT_NN_MODULES"] = "1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragmentation
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+warnings.filterwarnings("ignore", category=UserWarning, module="torchrl")
 
 from torchinfo import summary
 from dataclasses import dataclass
@@ -29,6 +31,7 @@ from rs.envs import (
     Classroom4UE,
     Classroom2UE,
     Conference2UEAllocation,
+    Conference4UEAllocation,
 )
 from rs.modules.agents import allocation, attention_critics
 
@@ -358,6 +361,8 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 env_cls = TwoAgentDataCenter
             elif config.env_id.lower() == "conference2ueallocation":
                 env_cls = Conference2UEAllocation
+            elif config.env_id.lower() == "conference4ueallocation":
+                env_cls = Conference4UEAllocation
             else:
                 raise ValueError(f"Unknown environment id: {config.env_id}")
             env = env_cls(
@@ -381,6 +386,8 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
                 env_cls = TwoAgentDataCenter
             elif config.env_id.lower() == "conference2ueallocation":
                 env_cls = Conference2UEAllocation
+            elif config.env_id.lower() == "conference4ueallocation":
+                env_cls = Conference4UEAllocation
             else:
                 raise ValueError(f"Unknown environment id: {config.env_id}")
             env = env_cls(
@@ -415,15 +422,15 @@ def main(config: TrainConfig):
     torch.multiprocessing.set_start_method("forkserver", force=True)
     pytorch_utils.init_seed(config.seed)
 
-    # envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
+    envs = SerialEnv(config.num_envs, [make_env(config, idx) for idx in range(config.num_envs)])
     # check_env_specs(envs)
 
-    envs = ParallelEnv(
-        config.num_envs,
-        [make_env(config, idx) for idx in range(config.num_envs)],
-        mp_start_method="forkserver",
-        shared_memory=False,
-    )
+    # envs = ParallelEnv(
+    #     config.num_envs,
+    #     [make_env(config, idx) for idx in range(config.num_envs)],
+    #     mp_start_method="forkserver",
+    #     shared_memory=False,
+    # )
     ob_spec = envs.observation_spec
     ac_spec = envs.action_spec
 
@@ -750,7 +757,6 @@ def train(
 
         allocator_tensordict = get_allocator_tensordict(data_view)
         allocator_rb.extend(allocator_tensordict.clone().to("cpu"))
-        print(f"allocator_rb size: {len(allocator_rb)}")
 
         allocator_loss = None
         if not config.random_assignment and not config.no_allocator:
@@ -772,7 +778,6 @@ def train(
                 torch.save(allocator.module.state_dict(), config.allocator_path)
             for param, target_param in zip(allocator.parameters(), allocator_target.parameters()):
                 target_param.data.copy_(0.995 * target_param.data + 0.005 * param.data)
-            print(f"Allocator loss: {allocator_loss}")
 
         for i in range(config.num_epochs):
             for _ in range(config.frames_per_batch // config.minibatch_size):
