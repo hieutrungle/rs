@@ -38,7 +38,7 @@ echo Blender directory: $BLENDER_DIR
 echo Coverage map directory: $SOURCE_DIR
 echo -e Assets directory: $ASSETS_DIR '\n'
 
-python ./main_attention.py --command "train" --env_id "conference4ueallocation" --checkpoint_dir $SOURCE_DIR/test_local_assets/attention_allocator_4ue --sionna_config_file $SOURCE_DIR/configs/sionna_conference_4ue.yaml --source_dir $SOURCE_DIR --num_envs 1 --group "PPO_Allocation_Conference_4UE" --name "AdvNorm_Attention_Allocation_Conference_4UE" --ep_len 2 --frames_per_batch 8 --total_episode 30 --num_epochs 2 --minibatch_size 4 --wandb "offline" --seed 2 
+python ./main_attention.py --command "train" --env_id "conference4ueallocation" --checkpoint_dir $SOURCE_DIR/test_local_assets/attention_allocator_4ue --sionna_config_file $SOURCE_DIR/configs/sionna_conference_4ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_4UE" --name "AdvNorm_Attention_Allocation_Conference_4UE" 
 # --no_compatibility_scores True 
 # --ep_len 2 --frames_per_batch 8 --n_iters 10 --num_epochs 2 --minibatch_size 4 --wandb "offline" --seed 2 --load_model $SOURCE_DIR/test_local_assets/attention_allocator_models_1/checkpoint_2.pt --load_allocator_replay_buffer $SOURCE_DIR/test_local_assets/attention_allocator_models_1/allocator_replay_buffer --load_allocator $SOURCE_DIR/test_local_assets/attention_allocator_models_1/allocator.pt
 # --load_model "/home/hieule/research/rs/local_assets_2/models/checkpoint_1.pt"
