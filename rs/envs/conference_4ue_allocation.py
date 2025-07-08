@@ -546,7 +546,7 @@ class Conference4UEAllocation(EnvBase):
             # shape: (1, num_rf, 1)
             rfs = cur_rss[:, rf_idx, loc_idx].unsqueeze(-1)
             prev_rfs = prev_rss[:, rf_idx, loc_idx].unsqueeze(-1)
-        c = 80
+        c = 100
         rfs += c
         prev_rfs += c
         w1 = 1.0
