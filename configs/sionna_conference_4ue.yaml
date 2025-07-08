@@ -1,5 +1,5 @@
-base_config: shared_ap
-scene_name: shared_ap
+base_config: classroom_4UE
+scene_name: classroom_4UE
 
 blender_app: "/home/hieule/blender/blender-3.3.14-linux-x64/blender"
 blender_dir: "/home/hieule/blender/"
