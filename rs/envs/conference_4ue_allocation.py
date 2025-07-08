@@ -398,7 +398,7 @@ class Conference4UEAllocation(EnvBase):
             selected_loc_indices = torch.topk(self.allocation_logits, k=2, dim=-1).indices
             new_selected_loc_indices = torch.argmax(self.allocation_logits, dim=-1, keepdim=True)
             if selected_loc_indices[:, 0, 0] == selected_loc_indices[:, 1, 0]:
-                new_selected_loc_indices[:, 1, 0] = selected_loc_indices[:, 1, 1]
+                new_selected_loc_indices[:, 0, 0] = selected_loc_indices[:, 0, 1]
             if selected_loc_indices[:, -1, 0] == selected_loc_indices[:, -2, 0]:
                 new_selected_loc_indices[:, -1, 0] = selected_loc_indices[:, -1, 1]
             self.selected_loc_indices = new_selected_loc_indices.squeeze(-1)
