@@ -5,6 +5,7 @@ os.environ["TORCHDYNAMO_INLINE_INBUILT_NN_MODULES"] = "1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragmentation
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+os.environ["BATCHED_PIPE_TIMEOUT"] = "200"  # to avoid timeout errors in batched pipe
 warnings.filterwarnings("ignore", category=UserWarning, module="torchrl")
 
 from torchinfo import summary
