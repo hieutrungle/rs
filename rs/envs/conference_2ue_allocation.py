@@ -360,6 +360,8 @@ class Conference2UEAllocation(EnvBase):
             self.selected_loc_indices = torch.randint(
                 0, self.num_rx, (self.num_rf,), device=self.device
             )
+            self.allocation_logprobs = torch.zeros((1, 1), device=self.device)
+            self.allocation_logits = torch.zeros((1, self.num_rf, self.num_rx), device=self.device)
         else:
             allocator = allocation.GraphAttentionTaskAllocator(
                 agent_state_dim=6,
