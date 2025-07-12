@@ -28,6 +28,10 @@ class MultiAgentAttentionCritics(nn.Module):
             nn.ReLU(),
         )
 
+        self.position_embedding = nn.Embedding(
+            num_embeddings=n_agents, embedding_dim=embed_dim, device=device
+        )
+
         self.agent_attention = attention.MultiAgentAttention(
             embed_dim=embed_dim,
             num_heads=num_heads,
@@ -51,7 +55,11 @@ class MultiAgentAttentionCritics(nn.Module):
         """Forward pass with attention mechanism"""
 
         # Embed observations
-        embedded = self.obs_embedding(observations)
+        obs_embedded = self.obs_embedding(observations)
+        # Shape: (1, n_agents)
+        position_indices = torch.arange(self.n_agents, device=observations.device).unsqueeze(0)
+        pos_embedded = self.position_embedding(position_indices)
+        embedded = obs_embedded + pos_embedded  # Add position embedding
         if len(observations.shape) == 3:
             # If observations are 3D, apply MHA directly
             attended_features = self.apply_mha_on_3d_input(embedded, self.agent_attention)
