@@ -666,7 +666,8 @@ def main(config: TrainConfig):
         traceback.print_exc()
     finally:
         allo_rb.set_sampler(torchrl.data.replay_buffers.RandomSampler())
-        allo_rb.dumps(config.allocator_replay_buffer_dir)
+        if config.command == "train":
+            allo_rb.dumps(config.allocator_replay_buffer_dir)
         wandb.finish()
         gc.collect()
         torch.cuda.empty_cache()
