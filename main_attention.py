@@ -34,7 +34,7 @@ from rs.envs import (
     Conference2UEAllocation,
     Conference4UEAllocation,
 )
-from rs.modules.agents import allocation, attention_critics
+from rs.modules.agents import allocation, attention_critics, maac_critic
 
 # Tensordict modules
 from tensordict import TensorDict, from_module
@@ -574,10 +574,16 @@ def main(config: TrainConfig):
             return_log_prob=True,
         )  # we'll need the log-prob for the PPO loss
 
-        critic_net = attention_critics.MultiAgentAttentionCritics(
+        # critic_net = attention_critics.MultiAgentAttentionCritics(
+        #     obs_dim=ob_spec["agents", "observation"].shape[-1],
+        #     embed_dim=128,
+        #     num_heads=4,
+        #     n_agents=n_agents,
+        #     device=config.device,
+        # )
+
+        critic_net = maac_critic.AttentionCritic(
             obs_dim=ob_spec["agents", "observation"].shape[-1],
-            embed_dim=128,
-            num_heads=4,
             n_agents=n_agents,
             device=config.device,
         )
@@ -666,7 +672,7 @@ def main(config: TrainConfig):
         traceback.print_exc()
     finally:
         allo_rb.set_sampler(torchrl.data.replay_buffers.RandomSampler())
-        if config.command == "train":
+        if len(allo_rb) > 0:
             allo_rb.dumps(config.allocator_replay_buffer_dir)
         wandb.finish()
         gc.collect()
@@ -762,7 +768,7 @@ def train(
 
         allocator_loss = None
         if not config.random_assignment and not config.no_allocator:
-            if idx >= 30 or config.load_allocator_replay_buffer != "-1":
+            if idx >= 55 or config.load_allocator_replay_buffer != "-1":
                 for i in range(3):
                     minibatch_run = len(allocator_rb) // 100
                     minibatch_run = max(minibatch_run, 1)
