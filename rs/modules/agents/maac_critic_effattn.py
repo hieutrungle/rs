@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Dict, List, Tuple, Optional
-from rs.modules.layers import efficient_attention, attention
+from rs.modules.layers import efficient_attention
 
 
 def initialize_shallow_transformer(model: nn.Module):
@@ -60,8 +60,8 @@ class AttentionCritic(nn.Module):
         # Multi-head attention layers (deliberately shallow)
         self.attention_layers = nn.ModuleList(
             [
-                nn.MultiheadAttention(
-                    embed_dim=hidden_dim, num_heads=num_heads, batch_first=True, device=device
+                efficient_attention.EfficientAttention(
+                    hidden_dim=hidden_dim, num_heads=num_heads, device=device
                 )
                 for _ in range(num_layers)
             ]
@@ -83,9 +83,6 @@ class AttentionCritic(nn.Module):
         )
 
         self.apply(initialize_shallow_transformer)
-
-    def apply_mha_on_3d_input(self, mha_layer, query, key, value, mask=None):
-        return mha_layer(query, key, value, attn_mask=mask)
 
     def forward(
         self,
@@ -112,26 +109,11 @@ class AttentionCritic(nn.Module):
         attended_features = obs_encoded
         for attention, norm in zip(self.attention_layers, self.layer_norms):
             # Self-attention across agents
-            if len(attended_features.shape) == 3:
-                attn_output, _ = self.apply_mha_on_3d_input(
-                    attention,
-                    attended_features,
-                    attended_features,
-                    attended_features,
-                    ~agent_mask if agent_mask is not None else None,
-                )
-            else:
-                attended_features = attended_features.squeeze(1)
-                attn_fn = torch.vmap(self.apply_mha_on_3d_input, in_dims=(None, 0, 0, 0, None))
-                attn_output, _ = attn_fn(
-                    attention,
-                    attended_features,
-                    attended_features,
-                    attended_features,
-                    ~agent_mask if agent_mask is not None else None,
-                )
-                attended_features = attended_features.unsqueeze(1)
-                attn_output = attn_output.unsqueeze(1)
+            attn_output = attention(
+                attended_features,
+                mask=~agent_mask if agent_mask is not None else None,
+            )
+
             # Residual connection and layer norm
             attended_features = norm(attended_features + attn_output)
 
