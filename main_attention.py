@@ -97,6 +97,7 @@ class TrainConfig:
     image_dir: str = (
         "-1"  # the path to the image directory, if not provided, it will be set to source_dir
     )
+    attention_dim: int = 128  # the dimension of the attention mechanism
 
     # Environment specific arguments
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
@@ -585,6 +586,7 @@ def main(config: TrainConfig):
         critic_net = maac_critic.AttentionCritic(
             obs_dim=ob_spec["agents", "observation"].shape[-1],
             n_agents=n_agents,
+            hidden_dim=config.attention_dim,
             device=config.device,
         )
 
