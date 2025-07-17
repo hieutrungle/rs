@@ -5,7 +5,6 @@ from rs.envs.classroom_4ue import Classroom4UE
 from rs.envs.classroom import Classroom
 from rs.envs.classroom_eval import ClassroomEval
 from rs.envs.data_center import TwoAgentDataCenter
-from rs.envs.hallway_1ue_ma import Hallway1UEMA
 
 env_ids = {
     "conference_2ue_allocation": Conference2UEAllocation,
@@ -15,5 +14,4 @@ env_ids = {
     "classroom": Classroom,
     "classroom_eval": ClassroomEval,
     "data_center": TwoAgentDataCenter,
-    "hallway_1ue_ma": Hallway1UEMA,
 }
