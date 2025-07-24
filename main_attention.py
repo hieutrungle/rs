@@ -584,12 +584,27 @@ def main(config: TrainConfig):
         #     device=config.device,
         # )
 
-        critic_net = maac_critic.AttentionCritic(
-            obs_dim=ob_spec["agents", "observation"].shape[-1],
+        # critic_net = maac_critic.AttentionCritic(
+        #     obs_dim=ob_spec["agents", "observation"].shape[-1],
+        #     n_agents=n_agents,
+        #     hidden_dim=config.attention_dim,
+        #     num_heads=config.attention_heads,
+        #     device=config.device,
+        # )
+
+        share_parameters_critic = False
+        mappo = True
+
+        critic_net = MultiAgentMLP(
+            n_agent_inputs=ob_spec["agents", "observation"].shape[-1],
+            n_agent_outputs=1,  # 1 value per agent
             n_agents=n_agents,
-            hidden_dim=config.attention_dim,
-            num_heads=config.attention_heads,
+            centralised=mappo,
+            share_params=share_parameters_critic,
             device=config.device,
+            depth=2,
+            num_cells=256,
+            activation_class=torch.nn.Tanh,
         )
 
         critic = TensorDictModule(
