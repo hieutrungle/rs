@@ -337,9 +337,7 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         sionna_config["viz_scene_path"] = viz_scene_path
         sionna_config["compute_scene_path"] = compute_scene_path
 
-        # image_dir = sionna_config["image_dir"]
         image_dir = os.path.join(config.image_dir, scene_name)
-        # image_dir = config.image_dir
         sionna_config["image_dir"] = image_dir
 
         if config.command.lower() == "train":
@@ -349,10 +347,6 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
 
         if config.env_id.lower() in ENV_IDS.keys():
             env_cls = ENV_IDS[config.env_id.lower()]
-        # if config.env_id.lower() == "conference_2ue":
-        #     env_cls = env_ids["conference_2ue"]
-        # if config.env_id.lower() == "conference_4ue":
-        #     env_cls = env_ids["conference_4ue"]
         else:
             raise ValueError(f"Unknown environment id: {config.env_id}")
 
@@ -373,58 +367,6 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         elif config.command.lower() == "eval":
             env_kwargs["eval_mode"] = True
             env = env_cls(**env_kwargs)
-
-        # if config.command.lower() == "train":
-        #     if config.env_id.lower() == "classroom":
-        #         env_cls = Classroom
-        #     elif config.env_id.lower() == "classroom2ue":
-        #         env_cls = Classroom2UE
-        #     elif config.env_id.lower() == "classroom4ue":
-        #         env_cls = Classroom4UE
-        #     elif config.env_id.lower() == "data_center":
-        #         env_cls = TwoAgentDataCenter
-        #     elif config.env_id.lower() == "conference2ueallocation":
-        #         env_cls = Conference2UEAllocation
-        #     elif config.env_id.lower() == "conference4ueallocation":
-        #         env_cls = Conference4UEAllocation
-        #     else:
-        #         raise ValueError(f"Unknown environment id: {config.env_id}")
-        #     env = env_cls(
-        #         sionna_config,
-        #         allocator_path=config.allocator_path,
-        #         seed=config.seed + idx,
-        #         device=config.device,
-        #         num_runs_before_restart=20,
-        #         random_assignment=config.random_assignment,
-        #         no_allocator=config.no_allocator,
-        #         no_compatibility_scores=config.no_compatibility_scores,
-        #     )
-        # elif config.command.lower() == "eval":
-        #     if config.env_id.lower() == "classroom":
-        #         env_cls = ClassroomEval
-        #     elif config.env_id.lower() == "classroom2ue":
-        #         env_cls = Classroom2UE
-        #     elif config.env_id.lower() == "classroom4ue":
-        #         env_cls = Classroom4UE
-        #     elif config.env_id.lower() == "data_center":
-        #         env_cls = TwoAgentDataCenter
-        #     elif config.env_id.lower() == "conference2ueallocation":
-        #         env_cls = Conference2UEAllocation
-        #     elif config.env_id.lower() == "conference4ueallocation":
-        #         env_cls = Conference4UEAllocation
-        #     else:
-        #         raise ValueError(f"Unknown environment id: {config.env_id}")
-        #     env = env_cls(
-        #         sionna_config,
-        #         allocator_path=config.allocator_path,
-        #         seed=config.eval_seed + idx,
-        #         device=config.device,
-        #         num_runs_before_restart=20,
-        #         eval_mode=True,
-        #         random_assignment=config.random_assignment,
-        #         no_allocator=config.no_allocator,
-        #         no_compatibility_scores=config.no_compatibility_scores,
-        #     )
 
         return env
 
