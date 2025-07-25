@@ -57,6 +57,7 @@ class Conference2UEAllocation(EnvBase):
         no_compatibility_scores: bool = False,
         num_runs_before_restart: int = 10,
         eval_mode: bool = False,
+        start_idx: int = 0,
     ):
 
         super().__init__(device=device, batch_size=[1])
@@ -138,6 +139,8 @@ class Conference2UEAllocation(EnvBase):
             self.n_agents, self.n_targets, dtype=torch.bool, device=device
         )
         self.allocator_reward_const = 0.0
+
+        self.counter = start_idx
 
     def _get_ob(self, tensordict: TensorDictBase) -> TensorDictBase:
 

@@ -57,6 +57,7 @@ class Conference4UEAllocation(EnvBase):
         no_compatibility_scores: bool = False,
         num_runs_before_restart: int = 10,
         eval_mode: bool = False,
+        start_idx: int = 0,
     ):
 
         super().__init__(device=device, batch_size=[1])
@@ -146,6 +147,8 @@ class Conference4UEAllocation(EnvBase):
             self.n_agents, self.n_targets, dtype=torch.bool, device=device
         )
         self.allocator_reward_const = 0.0
+
+        self.counter = start_idx * 4
 
     def _get_ob(self, tensordict: TensorDictBase) -> TensorDictBase:
 
@@ -404,9 +407,16 @@ class Conference4UEAllocation(EnvBase):
             if selected_loc_indices[:, -1, 0] == selected_loc_indices[:, -2, 0]:
                 new_selected_loc_indices[:, -1, 0] = selected_loc_indices[:, -1, 1]
             self.selected_loc_indices = new_selected_loc_indices.squeeze(-1)
+
+            if self.counter < 55 * 4:
+                self.selected_loc_indices = torch.arange(self.num_rf, device=self.device)
+                self.selected_loc_indices = self.selected_loc_indices.unsqueeze(0)
+
             self.allocation_logprobs = dist.log_prob(self.selected_loc_indices)
             self.allocation_logprobs = self.allocation_logprobs.unsqueeze(-1)
             self.selected_loc_indices = self.selected_loc_indices.squeeze(0)
+        self.counter += 1
+
         self.rx_positions = self.rx_positions.to(self.device)
         self.selected_rx_positions = self.rx_positions[0, self.selected_loc_indices, :].unsqueeze(0)
 

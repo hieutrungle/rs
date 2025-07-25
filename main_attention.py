@@ -25,15 +25,7 @@ torch.multiprocessing.set_start_method("forkserver", force=True)
 from torchrl.envs import ParallelEnv, EnvBase, SerialEnv
 import gc
 from rs.utils import pytorch_utils, utils
-from rs.envs import (
-    Classroom,
-    ClassroomEval,
-    TwoAgentDataCenter,
-    Classroom4UE,
-    Classroom2UE,
-    Conference2UEAllocation,
-    Conference4UEAllocation,
-)
+from rs.envs import ENV_IDS
 from rs.modules.agents import allocation, attention_critics, maac_critic
 
 # Tensordict modules
@@ -99,6 +91,8 @@ class TrainConfig:
     )
     attention_dim: int = 128  # the dimension of the attention mechanism
     attention_heads: int = 4  # the number of attention heads
+    # TODO: add start_idx for env and allocator training
+    start_idx: int = 0  # the starting index for the environment and allocator training
 
     # Environment specific arguments
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
@@ -353,57 +347,84 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         else:
             sionna_config["rendering"] = True
 
+        if config.env_id.lower() in ENV_IDS.keys():
+            env_cls = ENV_IDS[config.env_id.lower()]
+        # if config.env_id.lower() == "conference_2ue":
+        #     env_cls = env_ids["conference_2ue"]
+        # if config.env_id.lower() == "conference_4ue":
+        #     env_cls = env_ids["conference_4ue"]
+        else:
+            raise ValueError(f"Unknown environment id: {config.env_id}")
+
+        env_kwargs = {
+            "sionna_config": sionna_config,
+            "allocator_path": config.allocator_path,
+            "seed": config.seed + idx,
+            "device": config.device,
+            "num_runs_before_restart": 20,
+            "random_assignment": config.random_assignment,
+            "no_allocator": config.no_allocator,
+            "no_compatibility_scores": config.no_compatibility_scores,
+            "start_idx": config.start_idx,
+        }
+
         if config.command.lower() == "train":
-            if config.env_id.lower() == "classroom":
-                env_cls = Classroom
-            elif config.env_id.lower() == "classroom2ue":
-                env_cls = Classroom2UE
-            elif config.env_id.lower() == "classroom4ue":
-                env_cls = Classroom4UE
-            elif config.env_id.lower() == "data_center":
-                env_cls = TwoAgentDataCenter
-            elif config.env_id.lower() == "conference2ueallocation":
-                env_cls = Conference2UEAllocation
-            elif config.env_id.lower() == "conference4ueallocation":
-                env_cls = Conference4UEAllocation
-            else:
-                raise ValueError(f"Unknown environment id: {config.env_id}")
-            env = env_cls(
-                sionna_config,
-                allocator_path=config.allocator_path,
-                seed=config.seed + idx,
-                device=config.device,
-                num_runs_before_restart=20,
-                random_assignment=config.random_assignment,
-                no_allocator=config.no_allocator,
-                no_compatibility_scores=config.no_compatibility_scores,
-            )
+            env = env_cls(**env_kwargs)
         elif config.command.lower() == "eval":
-            if config.env_id.lower() == "classroom":
-                env_cls = ClassroomEval
-            elif config.env_id.lower() == "classroom2ue":
-                env_cls = Classroom2UE
-            elif config.env_id.lower() == "classroom4ue":
-                env_cls = Classroom4UE
-            elif config.env_id.lower() == "data_center":
-                env_cls = TwoAgentDataCenter
-            elif config.env_id.lower() == "conference2ueallocation":
-                env_cls = Conference2UEAllocation
-            elif config.env_id.lower() == "conference4ueallocation":
-                env_cls = Conference4UEAllocation
-            else:
-                raise ValueError(f"Unknown environment id: {config.env_id}")
-            env = env_cls(
-                sionna_config,
-                allocator_path=config.allocator_path,
-                seed=config.eval_seed + idx,
-                device=config.device,
-                num_runs_before_restart=20,
-                eval_mode=True,
-                random_assignment=config.random_assignment,
-                no_allocator=config.no_allocator,
-                no_compatibility_scores=config.no_compatibility_scores,
-            )
+            env_kwargs["eval_mode"] = True
+            env = env_cls(**env_kwargs)
+
+        # if config.command.lower() == "train":
+        #     if config.env_id.lower() == "classroom":
+        #         env_cls = Classroom
+        #     elif config.env_id.lower() == "classroom2ue":
+        #         env_cls = Classroom2UE
+        #     elif config.env_id.lower() == "classroom4ue":
+        #         env_cls = Classroom4UE
+        #     elif config.env_id.lower() == "data_center":
+        #         env_cls = TwoAgentDataCenter
+        #     elif config.env_id.lower() == "conference2ueallocation":
+        #         env_cls = Conference2UEAllocation
+        #     elif config.env_id.lower() == "conference4ueallocation":
+        #         env_cls = Conference4UEAllocation
+        #     else:
+        #         raise ValueError(f"Unknown environment id: {config.env_id}")
+        #     env = env_cls(
+        #         sionna_config,
+        #         allocator_path=config.allocator_path,
+        #         seed=config.seed + idx,
+        #         device=config.device,
+        #         num_runs_before_restart=20,
+        #         random_assignment=config.random_assignment,
+        #         no_allocator=config.no_allocator,
+        #         no_compatibility_scores=config.no_compatibility_scores,
+        #     )
+        # elif config.command.lower() == "eval":
+        #     if config.env_id.lower() == "classroom":
+        #         env_cls = ClassroomEval
+        #     elif config.env_id.lower() == "classroom2ue":
+        #         env_cls = Classroom2UE
+        #     elif config.env_id.lower() == "classroom4ue":
+        #         env_cls = Classroom4UE
+        #     elif config.env_id.lower() == "data_center":
+        #         env_cls = TwoAgentDataCenter
+        #     elif config.env_id.lower() == "conference2ueallocation":
+        #         env_cls = Conference2UEAllocation
+        #     elif config.env_id.lower() == "conference4ueallocation":
+        #         env_cls = Conference4UEAllocation
+        #     else:
+        #         raise ValueError(f"Unknown environment id: {config.env_id}")
+        #     env = env_cls(
+        #         sionna_config,
+        #         allocator_path=config.allocator_path,
+        #         seed=config.eval_seed + idx,
+        #         device=config.device,
+        #         num_runs_before_restart=20,
+        #         eval_mode=True,
+        #         random_assignment=config.random_assignment,
+        #         no_allocator=config.no_allocator,
+        #         no_compatibility_scores=config.no_compatibility_scores,
+        #     )
 
         return env
 
@@ -729,11 +750,16 @@ def train(
     allocator_loss_module = PolicyGradientAllocationLoss(
         entropy_coeff=config.entropy_eps, value_coeff=0.5
     )
-
-    pbar = tqdm(total=config.n_iters, desc="episode_reward_mean = 0.0")
+    pbar_iterable = range(config.start_idx, config.n_iters)
+    pbar = tqdm(
+        pbar_iterable,
+        total=config.n_iters,
+        desc="episode_reward_mean = 0.0",
+        initial=config.start_idx,
+    )
     GAE = loss_module.value_estimator
     episode_reward_mean_list = []
-    for idx, tensordict_data in enumerate(collector):
+    for idx, tensordict_data in enumerate(collector, start=config.start_idx):
 
         # We need to expand the done and terminated to match the reward shape (this is expected by the value estimator)
         # Agents
