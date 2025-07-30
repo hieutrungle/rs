@@ -150,7 +150,7 @@ class TrainConfig:
         total_steps = self.total_episodes * self.ep_len
         n_iters = total_steps // self.frames_per_batch + 1
         self.n_iters = n_iters
-        self.total_frames = self.frames_per_batch * self.n_iters
+        self.total_frames = self.frames_per_batch * (self.n_iters - self.start_idx)
 
         device = pytorch_utils.init_gpu()
         self.device = device
