@@ -345,11 +345,6 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
         else:
             sionna_config["rendering"] = True
 
-        if config.env_id.lower() in ENV_IDS.keys():
-            env_cls = ENV_IDS[config.env_id.lower()]
-        else:
-            raise ValueError(f"Unknown environment id: {config.env_id}")
-
         env_kwargs = {
             "sionna_config": sionna_config,
             "allocator_path": config.allocator_path,
@@ -362,11 +357,21 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
             "start_idx": config.start_idx,
         }
 
-        if config.command.lower() == "train":
-            env = env_cls(**env_kwargs)
-        elif config.command.lower() == "eval":
+        if config.command.lower() == "eval":
             env_kwargs["eval_mode"] = True
-            env = env_cls(**env_kwargs)
+
+        if config.algo.lower() == "ga":
+            results = torch.load(config.drl_eval_results_dir, weights_only=False)
+            target_pos = results["agents", "target_pos"]
+            rx_positions = target_pos[0, 0, :, :3, :]
+            rx_positions = rx_positions[:: config.ep_len, ...]
+            env_kwargs["rx_positions"] = rx_positions
+            env_kwargs["seed"] = config.seed
+
+        if config.env_id.lower() not in ENV_IDS:
+            raise ValueError(f"Unknown environment id: {config.env_id}")
+        env_cls = ENV_IDS[config.env_id.lower()]
+        env = env_cls(**env_kwargs)
 
         return env
 
