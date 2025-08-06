@@ -156,72 +156,6 @@ class TrainConfig:
         self.device = device
 
 
-# class PolicyGradientAllocationLoss(nn.Module):
-#     """Policy gradient loss specifically for allocation tasks"""
-
-#     def __init__(self, entropy_coeff=0.01, value_coeff=0.5):
-#         super().__init__()
-#         self.entropy_coeff = entropy_coeff
-#         self.value_coeff = value_coeff
-
-#     def forward(self, allocation_logits, advantages, returns, values, p=0.001):
-#         """Policy gradient loss with baseline
-#         Args:
-#             allocation_logits (torch.Tensor): Logits for allocation decisions, shape (batch_size, n_agents, n_targets)
-#             advantages (torch.Tensor): Advantages for the actions taken, shape (batch_size, n_agents)
-#             returns (torch.Tensor): Returns for the actions taken, shape (batch_size, n_agents)
-#             values (torch.Tensor): State values predicted by the critic, shape (batch_size, n_agents, 1)
-#         Returns:
-#             dict: A dictionary containing the total loss, policy loss, entropy, and value loss
-#         """
-#         n_targets = allocation_logits.shape[-1]
-
-#         allocation_probs = F.softmax(allocation_logits, dim=-1)
-
-#         if torch.rand(size=()).item() < p:
-#             selected_loc_indices = torch.argmax(allocation_probs, dim=-1)
-#             action_log_probs = F.log_softmax(allocation_logits).unsqueeze(-1)
-#         else:
-#             location_target_dist = torch.distributions.Independent(
-#                 base_distribution=torch.distributions.Categorical(allocation_probs),
-#                 reinterpreted_batch_ndims=1,
-#             )
-#             # actions (torch.Tensor): Actions (selected_loc_indices) taken by the agents, shape (batch_size, n_agents)
-#             # actions = selected_loc_indices
-#             selected_loc_indices = location_target_dist.sample()
-#             location_log_probs = location_target_dist.log_prob(selected_loc_indices)
-#             action_log_probs = location_log_probs.unsqueeze(-1)
-#         print(
-#             f"allocation_probs: {allocation_probs.shape}, action_log_probs: {action_log_probs.shape}"
-#         )
-#         # Policy gradient loss
-#         print(
-#             f"allocation_logits: {allocation_logits.shape}, advantages: {advantages.shape}, returns: {returns.shape}, values: {values.shape}"
-#         )
-#         logits_flat = allocation_logits.view(-1, n_targets)
-#         log_probs = F.log_softmax(logits_flat, dim=-1)
-
-#         policy_loss = -(action_log_probs * advantages).mean()
-
-#         # Entropy bonus for exploration
-#         probs = F.softmax(logits_flat, dim=-1)
-#         log_probs = F.log_softmax(logits_flat, dim=-1)
-#         entropy = -(probs * log_probs).sum(dim=-1).mean()
-
-#         # Value function loss
-#         value_loss = F.mse_loss(values, returns)
-
-#         # Total loss
-#         total_loss = policy_loss - self.entropy_coeff * entropy + self.value_coeff * value_loss
-
-#         return {
-#             "total_loss": total_loss,
-#             "policy_loss": policy_loss,
-#             "entropy": entropy,
-#             "value_loss": value_loss,
-#         }
-
-
 class PolicyGradientAllocationLoss(nn.Module):
     """Policy gradient loss specifically for allocation tasks"""
 
@@ -746,11 +680,6 @@ def train(
                 params=loss_module.critic_network_params,
                 target_params=loss_module.target_critic_network_params,
             )
-            # # allocator_gae(
-            # #     tensordict_data,
-            # #     params=from_module(allocator).data,
-            # #     target_params=from_module(allocator_target).data,
-            # # )
 
         data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
         replay_buffer.extend(data_view)
@@ -852,8 +781,8 @@ def eval(envs: ParallelEnv, config: TrainConfig, policy: TensorDictModule):
             policy,
             device=config.device,
             storing_device=config.device,
-            frames_per_batch=config.ep_len * 20 * config.num_envs,
-            total_frames=config.ep_len * 20 * config.num_envs,
+            frames_per_batch=config.ep_len * config.total_episodes * config.num_envs,
+            total_frames=config.ep_len * config.total_episodes * config.num_envs,
         )
         for idx, tensordict_data in enumerate(collector):
             rollouts = tensordict_data
