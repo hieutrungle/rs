@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+set -o pipefail # Pipe fails when any command in the pipe fails
+set -u  # Treat unset variables as an error
+
+handle_error() {
+    echo "An error occurred on line $1"
+    exit 1
+}
+
+trap 'handle_error $LINENO' ERR
+
+# for a in /sys/bus/pci/devices/*; do echo 0 | sudo tee -a $a/numa_node; done
+
+# # Source: https://stackoverflow.com/questions/59895/how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
+# # Get the directory of the script (does not solve symlink problem)
+# SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+# echo "Script directory: $SCRIPT_DIR"
+
+# Get the source path of the script, even if it's called from a symlink
+SOURCE=${BASH_SOURCE[0]}
+while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
+  SOURCE=$(readlink "$SOURCE")
+  [[ $SOURCE != /* ]] && SOURCE=$DIR/$SOURCE # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+SCRIPT_DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
+echo "Source directory: $SCRIPT_DIR"
+SOURCE_DIR=$SCRIPT_DIR
+ASSETS_DIR=${SOURCE_DIR}/local_assets
+
+# * Change this to your blender directory
+RESEARCH_DIR=$(dirname $SOURCE_DIR)
+HOME_DIR=$(dirname $RESEARCH_DIR)
+BLENDER_DIR=${HOME_DIR}/blender 
+
+echo Blender directory: $BLENDER_DIR
+echo Coverage map directory: $SOURCE_DIR
+echo -e Assets directory: $ASSETS_DIR '\n'
+
+# Reward Factors e20tot20
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f0_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f0_eval" --seed 100 --ep_len 20 --total_episodes 20 --load_model $SOURCE_DIR/local_assets/alct_2ue_f0/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f0/allocator.pt --image_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f0_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f1_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f1_eval" --seed 100 --ep_len 20 --total_episodes 20 --load_model $SOURCE_DIR/local_assets/alct_2ue_f1/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f1/allocator.pt --image_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f1_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f3_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f3_eval" --seed 100 --ep_len 20 --total_episodes 20 --load_model $SOURCE_DIR/local_assets/alct_2ue_f3/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f3/allocator.pt --image_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f3_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f4_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f4_eval" --seed 100 --ep_len 20 --total_episodes 20 --load_model $SOURCE_DIR/local_assets/alct_2ue_f4/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f4/allocator.pt --image_dir $SOURCE_DIR/local_assets/e20tot20/alct_2ue_f4_eval/images
+
+# Reward Factors e4tot100
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f0_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f0_eval" --seed 100 --ep_len 4 --total_episodes 100 --load_model $SOURCE_DIR/local_assets/alct_2ue_f0/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f0/allocator.pt --image_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f0_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f1_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f1_eval" --seed 100 --ep_len 4 --total_episodes 100 --load_model $SOURCE_DIR/local_assets/alct_2ue_f1/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f1/allocator.pt --image_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f1_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f3_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f3_eval" --seed 100 --ep_len 4 --total_episodes 100 --load_model $SOURCE_DIR/local_assets/alct_2ue_f3/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f3/allocator.pt --image_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f3_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f4_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f4_eval" --seed 100 --ep_len 4 --total_episodes 100 --load_model $SOURCE_DIR/local_assets/alct_2ue_f4/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f4/allocator.pt --image_dir $SOURCE_DIR/local_assets/e4tot100/alct_2ue_f4_eval/images
+
+# Reward Factors e2tot200
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f0_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f0_eval" --seed 100 --ep_len 2 --total_episodes 200 --load_model $SOURCE_DIR/local_assets/alct_2ue_f0/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f0/allocator.pt --image_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f0_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f1_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f1_eval" --seed 100 --ep_len 2 --total_episodes 200 --load_model $SOURCE_DIR/local_assets/alct_2ue_f1/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f1/allocator.pt --image_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f1_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f3_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f3_eval" --seed 100 --ep_len 2 --total_episodes 200 --load_model $SOURCE_DIR/local_assets/alct_2ue_f3/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f3/allocator.pt --image_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f3_eval/images
+
+python ./main_attention.py --command "eval" --env_id "conference_2ue" --checkpoint_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f4_eval --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 4 --group "PPO_Allocation_Conference_2UE" --name "alct_2ue_f4_eval" --seed 100 --ep_len 2 --total_episodes 200 --load_model $SOURCE_DIR/local_assets/alct_2ue_f4/checkpoint_155.pt --load_allocator $SOURCE_DIR/local_assets/alct_2ue_f4/allocator.pt --image_dir $SOURCE_DIR/local_assets/e2tot200/alct_2ue_f4_eval/images
+
+# --ep_len 5 --frames_per_batch 20 --n_iters 10 --num_epochs 6 --minibatch_size 4 --wandb "offline" --seed 2
+# --load_model "/home/hieule/research/rs/local_assets_2/models/checkpoint_1.pt"
+# python ./main.py --command "eval" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --wandb "offline" --num_envs 1
