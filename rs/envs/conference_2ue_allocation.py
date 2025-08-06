@@ -403,7 +403,12 @@ class Conference2UEAllocation(EnvBase):
         else:
             self.allocator_reward_const = torch.ones((1, 1), device=self.device) * 10.0 / 30.0
 
-        self.cur_rss = self._get_rss(self.focals)
+        if self.eval_mode:
+            self.cur_rss = torch.zeros(
+                (1, self.n_agents, self.n_targets), dtype=torch.float32, device=self.device
+            )
+        else:
+            self.cur_rss = self._get_rss(self.focals)
         self.prev_rss = self.cur_rss.clone().detach()
 
         out = {
