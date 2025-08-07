@@ -93,6 +93,7 @@ class TrainConfig:
     attention_heads: int = 4  # the number of attention heads
     # TODO: add start_idx for env and allocator training
     start_idx: int = 0  # the starting index for the environment and allocator training
+    algo: str = "drl"  # the algorithm to use, "drl" or "ga"
 
     # Environment specific arguments
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
