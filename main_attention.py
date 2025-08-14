@@ -294,6 +294,7 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
 
         if config.command.lower() == "eval":
             env_kwargs["eval_mode"] = True
+            env_kwargs["seed"] = config.eval_seed
 
         if config.algo.lower() == "ga":
             results = torch.load(config.drl_eval_results_dir, weights_only=False)
