@@ -37,6 +37,7 @@ from sionna.rt import (
 import sionna.rt
 from rs.utils import utils
 from typing import Optional, Tuple
+import drjit as dr
 
 tf.get_logger().setLevel("ERROR")
 
@@ -289,14 +290,33 @@ class SignalCoverage:
         self.__prepare_camera()
 
         self.compute_scene_path = self.sionna_config["compute_scene_path"]
+        wood_mat = sionna.rt.ITURadioMaterial(
+            name="wood12", itu_type="wood", thickness=0.2, color=[0.8, 0.0, 0.05]
+        )
         self.compute_scene = load_scene(self.compute_scene_path, merge_shapes=True)
+        for o in self.compute_scene.objects:
+            obj = self.compute_scene.get(o)
+            if "wood" in obj.radio_material.name:
+                obj.radio_material = wood_mat
         self.__prepare_radio_devices(self.compute_scene)
 
         self.rendering = sionna_config.get("rendering", False)
         if self.rendering:
-            self.viz_scene_path = self.sionna_config["viz_scene_path"]
-            self.viz_scene = load_scene(self.viz_scene_path, merge_shapes=True)
-            self.__prepare_radio_devices(self.viz_scene)
+            if sionna_config.get("viz_same_scene", False):
+                self.viz_scene_path = self.compute_scene_path
+                self.viz_scene = self.compute_scene
+            else:
+                self.viz_scene_path = self.sionna_config["viz_scene_path"]
+                self.viz_scene = load_scene(self.viz_scene_path, merge_shapes=True)
+                # self.viz_scene.add(wood_mat)
+                wood_mat = sionna.rt.ITURadioMaterial(
+                    name="wood3", itu_type="wood", thickness=0.2, color=[0.8, 0.0, 0.05]
+                )
+                for o in self.viz_scene.objects:
+                    obj = self.viz_scene.get(o)
+                    if "wood" in obj.radio_material.name:
+                        obj.radio_material = wood_mat
+                self.__prepare_radio_devices(self.viz_scene)
 
         self.rx_pos = np.array(self.sionna_config["rx_positions"], dtype=np.float32)
         self.rf_pos = np.array(self.sionna_config["rf_positions"], dtype=np.float32)
@@ -328,7 +348,7 @@ class SignalCoverage:
                 look_at=rf_pos,
                 power_dbm=self.sionna_config["tx_power_dbm"],
                 color=[0.05, 0.05, 0.9],
-                display_radius=0.5,
+                display_radius=self.sionna_config.get("display_radius", 0.3),
             )
             scene.add(tx)
 
@@ -348,8 +368,8 @@ class SignalCoverage:
                 name=f"rx_{i}",
                 position=rx_pos,
                 orientation=rx_orient,
-                color=[0.99, 0.01, 0.99],
-                display_radius=0.5,
+                color=self.sionna_config.get("rx_color", [0.99, 0.01, 0.99]),
+                display_radius=self.sionna_config.get("display_radius", 0.3),
             )
             scene.add(rx)
 
@@ -376,6 +396,7 @@ class SignalCoverage:
             cm_kwargs.update(kwargs)
         rm_solver = RadioMapSolver()
         cmap = rm_solver(**cm_kwargs)
+        cmap._pathgain_map = dr.clip(cmap._pathgain_map, 1e-20, 5)
         return cmap
 
     def compute_paths(self, **kwargs) -> Paths:
