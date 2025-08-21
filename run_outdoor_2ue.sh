@@ -41,4 +41,4 @@ echo -e Assets directory: $ASSETS_DIR '\n'
 TMP_DIR=${SOURCE_DIR}/tmp
 export OPTIX_CACHE_PATH=${TMP_DIR}/optix_cache
 mkdir -p ${OPTIX_CACHE_PATH}
-python ./main_attention.py --command "train" --env_id "outdoor_2ue" --checkpoint_dir $SOURCE_DIR/test_local_assets/outdoor_2ue --sionna_config_file $SOURCE_DIR/configs/sionna_outdoor_2ue.yaml --source_dir $SOURCE_DIR --num_envs 5 --group "PPO_Allocation_Outdoor_2UE" --name "outdoor_2ue" --track_wandb False
+python ./main_attention.py --command "train" --env_id "outdoor_2ue" --checkpoint_dir $SOURCE_DIR/test_local_assets/outdoor_2ue --sionna_config_file $SOURCE_DIR/configs/sionna_outdoor_2ue.yaml --source_dir $SOURCE_DIR --num_envs 5 --group "PPO_Allocation_Outdoor_2UE" --name "outdoor_2ue" --track_wandb False --no_compatibility_scores True
