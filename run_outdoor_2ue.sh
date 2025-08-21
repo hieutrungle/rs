@@ -38,7 +38,11 @@ echo Blender directory: $BLENDER_DIR
 echo Coverage map directory: $SOURCE_DIR
 echo -e Assets directory: $ASSETS_DIR '\n'
 
-python ./main_attention.py --command "eval" --env_id "conference2ueallocation" --checkpoint_dir $SOURCE_DIR/test_local_assets/eval_attention_allocator_2ue --sionna_config_file $SOURCE_DIR/configs/sionna_conference_2ue.yaml --source_dir $SOURCE_DIR --num_envs 2 --group "PPO_Allocation_Conference_2UE" --name "AdvNorm_Attention_Allocation_Conference_2UE" --seed 100 --ep_len 20 --load_model "/home/hieule/research/rs/local_assets/attention_allocator_conference_2ue/checkpoint_69.pt" --load_allocator "/home/hieule/research/rs/local_assets/attention_allocator_conference_2ue/allocator.pt" --image_dir "/home/hieule/research/rs/local_assets/images_attention_allocator_2ue"
-# --ep_len 5 --frames_per_batch 20 --n_iters 10 --num_epochs 6 --minibatch_size 4 --wandb "offline" --seed 2
+TMP_DIR=${SOURCE_DIR}/tmp
+export OPTIX_CACHE_PATH=${TMP_DIR}/optix_cache
+mkdir -p ${OPTIX_CACHE_PATH}
+python ./main_attention.py --command "train" --env_id "outdoor_2ue" --checkpoint_dir $SOURCE_DIR/test_local_assets/outdoor_2ue --sionna_config_file $SOURCE_DIR/configs/sionna_outdoor_2ue.yaml --source_dir $SOURCE_DIR --num_envs 1 --group "PPO_Allocation_Outdoor_2UE" --name "outdoor_2ue" --track_wandb False
+# --wandb "offline" --no_compatibility_scores True --ep_len 2 --frames_per_batch 8 --n_iters 10 --num_epochs 2 --minibatch_size 4 --wandb "offline" --seed 2
+# --load_model $SOURCE_DIR/test_local_assets/attention_allocator_models_1/checkpoint_2.pt --load_allocator_replay_buffer $SOURCE_DIR/test_local_assets/attention_allocator_models_1/allocator_replay_buffer --load_allocator $SOURCE_DIR/test_local_assets/attention_allocator_models_1/allocator.pt
 # --load_model "/home/hieule/research/rs/local_assets_2/models/checkpoint_1.pt"
 # python ./main.py --command "eval" --checkpoint_dir "/home/hieule/research/rs/local_assets/models" --sionna_config_file "/home/hieule/research/rs/configs/sionna_shared_ap.yaml" --replay_buffer_dir "/home/hieule/research/rs/local_assets/replay_buffer" --wandb "offline" --num_envs 1
