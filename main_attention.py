@@ -296,6 +296,9 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
             env_kwargs["eval_mode"] = True
             env_kwargs["seed"] = config.eval_seed
 
+        if "outdoor" in config.env_id.lower():
+            sionna_config["viz_same_scene"] = True
+
         if config.algo.lower() == "ga":
             results = torch.load(config.drl_eval_results_dir, weights_only=False)
             target_pos = results["agents", "target_pos"]
@@ -343,7 +346,25 @@ def main(config: TrainConfig):
 
     observation_shape = ob_spec["agents", "observation"].shape
     loc = torch.zeros(observation_shape, device=config.device)
-    scale = torch.ones(observation_shape, device=config.device) * 8.0
+    scale = torch.ones(observation_shape, device=config.device)
+    if "outdoor" in config.env_id.lower():
+        loc[..., 0] = loc[..., 0] + 174.546
+        loc[..., 1] = loc[..., 1] + 130.649
+        loc[..., 3] = loc[..., 3] + 178.777
+        loc[..., 4] = loc[..., 4] + 213.079
+        loc[..., 6] = loc[..., 6] + 174.546
+        loc[..., 7] = loc[..., 7] + 130.649
+        scale[..., 0] = scale[..., 0] * 30.0  # rx x position
+        scale[..., 1] = scale[..., 1] * 30.0  # rx y position
+        scale[..., 2] = scale[..., 2] * 2.0  # rx z position
+        scale[..., 3] = scale[..., 3] * 30.0  # rf x position
+        scale[..., 4] = scale[..., 4] * 10.0  # rf y position
+        scale[..., 5] = scale[..., 5] * 9.0  # rf z position
+        scale[..., 6] = scale[..., 6] * 40.0  # focal x position
+        scale[..., 7] = scale[..., 7] * 40.0  # focal y position
+        scale[..., 8] = scale[..., 8] * 5.0  # focal z position
+    else:
+        scale = scale * 8.0  # scale all observations by 8.0
 
     checkpoint = None
     if config.load_model != "-1":
