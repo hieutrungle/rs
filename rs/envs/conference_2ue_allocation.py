@@ -58,7 +58,7 @@ class Conference2UEAllocation(EnvBase):
         num_runs_before_restart: int = 10,
         eval_mode: bool = False,
         start_idx: int = 0,
-        ob_noise: int = 0.0,
+        ob_noise: float = 0.0,
     ):
 
         super().__init__(device=device, batch_size=[1])
