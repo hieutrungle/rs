@@ -58,6 +58,7 @@ class Conference2UEAllocation(EnvBase):
         num_runs_before_restart: int = 10,
         eval_mode: bool = False,
         start_idx: int = 0,
+        ob_noise: int = 0.0,
     ):
 
         super().__init__(device=device, batch_size=[1])
@@ -75,6 +76,7 @@ class Conference2UEAllocation(EnvBase):
         self.random_assignment = random_assignment
         self.no_allocator = no_allocator
         self.no_compatibility_scores = no_compatibility_scores
+        self.ob_noise = ob_noise
 
         # devices
         rx_positions = torch.tensor(
@@ -188,13 +190,13 @@ class Conference2UEAllocation(EnvBase):
             if polygon.contains(point):
                 return point
 
-    def _move_rx_positions(self) -> list:
+    def _move_rx_positions(self, prev_rx_positions) -> list:
         """
         Move the receiver positions slightly within a defined range.
         This function modifies the receiver positions by moving them within a circle of radius 0.2m.
         """
         moved_rx_positions = []
-        for idx, pos in enumerate(self.rx_positions.squeeze(0).tolist()):
+        for idx, pos in enumerate(prev_rx_positions.squeeze(0).tolist()):
             # move the position in 0.2m range using a circle with radius 0.2m
             polygon = Polygon(self.rx_polygon_coords[idx])
             pt = self._generate_moved_rx_positions(pos, polygon)
@@ -311,16 +313,20 @@ class Conference2UEAllocation(EnvBase):
         if self.focals is None or not self.eval_mode:
             rx_positions = self._prepare_rx_positions()
         else:
-            rx_positions = self._move_rx_positions()
+            rx_positions = self._move_rx_positions(self.prev_rx_positions)
+        self.prev_rx_positions = rx_positions
         sionna_config["rx_positions"] = rx_positions
         rx_positions = torch.tensor(rx_positions, dtype=torch.float32, device=self.device)
         rx_positions = rx_positions.unsqueeze(0)
         self.rx_positions = rx_positions
 
+        # add noise to rx_positions
+        self.rx_positions += torch.randn_like(self.rx_positions) * self.ob_noise
+
         self.distances = torch.cdist(
             self.rf_positions.squeeze(0), self.rx_positions.squeeze(0), p=2
         )  # (n_rf, n_rx)
-        self.factor = torch.pow(self.distances, 2.2)
+        self.factor = torch.pow(self.distances, 1.0)
 
         # Initialize the environment using the Sionna configuration
         if self.focals is None:
