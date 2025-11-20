@@ -94,6 +94,7 @@ class TrainConfig:
     # TODO: add start_idx for env and allocator training
     start_idx: int = 0  # the starting index for the environment and allocator training
     algo: str = "drl"  # the algorithm to use, "drl" or "ga"
+    ob_noise: float = 0.0  # observation noise level
 
     # Environment specific arguments
     env_id: str = "wireless-sigmap-v0"  # the environment id of the task
@@ -290,6 +291,7 @@ def make_env(config: TrainConfig, idx: int) -> Callable:
             "no_allocator": config.no_allocator,
             "no_compatibility_scores": config.no_compatibility_scores,
             "start_idx": config.start_idx,
+            "ob_noise": config.ob_noise,
         }
 
         if config.command.lower() == "eval":
