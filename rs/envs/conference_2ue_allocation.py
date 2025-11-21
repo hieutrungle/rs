@@ -314,7 +314,7 @@ class Conference2UEAllocation(EnvBase):
             rx_positions = self._prepare_rx_positions()
         else:
             rx_positions = self._move_rx_positions(self.prev_rx_positions)
-        self.prev_rx_positions = rx_positions
+        self.prev_rx_positions = torch.tensor(rx_positions, dtype=torch.float32, device=self.device)
         sionna_config["rx_positions"] = rx_positions
         rx_positions = torch.tensor(rx_positions, dtype=torch.float32, device=self.device)
         rx_positions = rx_positions.unsqueeze(0)
